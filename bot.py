@@ -297,9 +297,10 @@ async def learn(interaction: discord.Interaction, fact: str):
 
 @tree.command(name="what-grug-know", description="See all the facts Grug knows.")
 async def what_grug_know(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True) # Tell Discord Grug is thinking
     all_facts = db.get_all_facts()
     if not all_facts:
-        await interaction.response.send_message("Grug know nothing.", ephemeral=True)
+        await interaction.followup.send("Grug know nothing.", ephemeral=True)
         return
 
     # Format facts into a numbered list
