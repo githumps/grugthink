@@ -18,7 +18,9 @@ class GrugDB:
     def __init__(self, db_path, model_name='all-MiniLM-L6-v2'):
         self.db_path = db_path
         self.index_path = db_path.replace('.db', '.index')
-        self.embedder = SentenceTransformer(model_name)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        local_model_path = os.path.join(current_dir, 'models', 'sentence-transformers', model_name)
+        self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
         self.dimension = self.embedder.get_sentence_embedding_dimension()
 
         self.conn = None
