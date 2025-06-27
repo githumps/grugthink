@@ -10,8 +10,8 @@ Grug is strong, but Grug can be stronger with help from other cavemen. If you wa
 
 1.  **Get Grug's Code:**
     ```bash
-    git clone https://github.com/your-tribe/grug-think.git
-    cd grug-think
+    git clone https://github.com/githumps/grugthink.git
+    cd grugthink
     ```
 
 2.  **Make Magic Air (Virtual Environment):**

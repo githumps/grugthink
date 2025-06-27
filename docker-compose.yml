@@ -5,8 +5,8 @@ services:
   grug-bot:
     # Official Grug from the great hunt.
     # Find more versions on GitHub Packages page for this tribe's rock pile.
-    # Example: ghcr.io/your-tribe/grugthink:v1.0.0
-    image: ghcr.io/grugthink/grugthink:latest
+    # Example: ghcr.io/githumps/grugthink:v1.0.0
+    image: ghcr.io/githumps/grugthink:latest
     container_name: grug-bot
     restart: unless-stopped
     # Grug need his secrets to think.

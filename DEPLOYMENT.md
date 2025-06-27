@@ -8,7 +8,7 @@ This is the best way to wake Grug. It uses the `docker-compose.yml` magic scroll
 
 1.  **Get Grug's Code:**
     ```bash
-    git clone https://github.com/your-tribe/grug-think.git
+    git clone https://github.com/githumps/grugthink.git
     cd grug-think
     ```
 
@@ -68,9 +68,22 @@ Before the great hunt, Grug must practice. You make a test Grug to see if he is 
 When Grug is strong and ready for all tribes, you make an official Grug. This is a great event.
 
 1.  **Check Grug's Work:** Make sure Grug is strong. All new code must be on the `main` branch. Run the tests one last time.
-    ```bash
-    pytest
-    ```
+    *   **Make Magic Air:**
+        ```bash
+        python3.11 -m venv venv
+        ```
+    *   **Wake Up Magic Air:**
+        ```bash
+        source venv/bin/activate
+        ```
+    *   **Get Tools:**
+        ```bash
+        pip install -r requirements.txt -r requirements-dev.txt
+        ```
+    *   **Run Tests:**
+        ```bash
+        PYTHONPATH=. pytest
+        ```
 
 2.  **Make the Official Mark (Git Tag):**
     *   Grug must be marked with a special tag like `v1.0.0` to show he is ready.
@@ -83,7 +96,7 @@ When Grug is strong and ready for all tribes, you make an official Grug. This is
     *   When you push a tag like `v1.0.0`, the magic spirit (GitHub Actions) will automatically:
         *   Create a GitHub Release.
         *   Build the official magic box.
-        *   Push the box to GitHub Packages with two names: `ghcr.io/your-tribe/grugthink:v1.0.0` and `ghcr.io/your-tribe/grugthink:latest`.
+        *   Push the box to GitHub Packages with two names: `ghcr.io/githumps/grugthink:v1.0.0` and `ghcr.io/githumps/grugthink:latest`.
 
 ## Grug's Secrets (`.env` file)
 
