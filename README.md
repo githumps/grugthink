@@ -23,3 +23,9 @@ Grug is a Discord bot written in Python. He uses a simple SQLite database to sto
 ---
 
 For how to wake Grug up, see `DEPLOYMENT.md`.
+
+## License and Usage
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify and share the software for **noncommercial** purposes only. Any kind of commercial use is not permitted.
+
+All libraries listed in `requirements.txt` and `requirements-dev.txt` are distributed under permissive open source licenses such as MIT, BSD or Apache 2.0. These licenses are compatible with the PolyForm Noncommercial terms and may be used within this project so long as their notice requirements are met.
