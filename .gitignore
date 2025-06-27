@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+.env.dev
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# Pytest cache
+.pytest_cache/
+
+# Ruff cache
+.ruff_cache/
+
+# macOS specific files
+.DS_Store
+
+# Grug's brain files
+grug_lore.db
+grug_lore.index

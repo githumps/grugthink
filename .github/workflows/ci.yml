@@ -1,0 +1,38 @@
+name: Grug Code Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Grug get code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Grug's tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt pip-audit
+
+      - name: Grug check words (Linting with Ruff)
+        run: |
+          ruff check . --fix
+          ruff format .
+
+      - name: Grug sharpen spear (Run Tests)
+        run: PYTHONPATH=. pytest
+
+      - name: Grug check tools for bad spirits (Dependency Scan with pip-audit)
+        run: pip-audit --ignore-vuln GHSA-887c-mr87-cxwp

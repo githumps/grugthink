@@ -1,0 +1,10 @@
+discord.py
+python-dotenv
+requests
+numpy
+faiss-cpu
+sentence-transformers
+google-generativeai
+google-api-python-client
+
+setuptools>=78.1.1
