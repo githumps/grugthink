@@ -3,8 +3,7 @@ python-dotenv
 requests
 numpy<2
 faiss-cpu==1.7.4
-sentence-transformers
+sentence-transformers>=2.2.2
 google-generativeai
 google-api-python-client
-
 setuptools>=78.1.1

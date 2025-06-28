@@ -1,7 +1,8 @@
 import os
+import pickle
 import sys
 import types
-import pickle
+import importlib.util
 
 import numpy as np
 import pytest
@@ -9,6 +10,8 @@ import pytest
 # Provide a minimal faiss stub if faiss is unavailable
 if "faiss" not in sys.modules:
     fake_faiss = types.ModuleType("faiss")
+    # This is the important part to make the mock compatible with transformers' import checks.
+    fake_faiss.__spec__ = importlib.util.spec_from_loader("faiss", loader=None)
 
     class IndexFlatL2:
         def __init__(self, dim):
@@ -96,9 +99,10 @@ def db_instance():
     if os.path.exists(test_index_path):
         os.remove(test_index_path)
 
+
 def test_add_fact(db_instance):
     assert db_instance.add_fact("Grug like big rock.")
-    assert not db_instance.add_fact("Grug like big rock.") # Test adding duplicate
+    assert not db_instance.add_fact("Grug like big rock.")  # Test adding duplicate
     facts = db_instance.get_all_facts()
     assert "Grug like big rock." in facts
     assert len(facts) == 1
@@ -106,6 +110,7 @@ def test_add_fact(db_instance):
 
 def test_add_fact_rollback_on_index_failure(db_instance, monkeypatch):
     """Ensure DB insert is rolled back if indexing fails."""
+
     def fail(*args, **kwargs):
         raise RuntimeError("fail")
 
@@ -113,6 +118,7 @@ def test_add_fact_rollback_on_index_failure(db_instance, monkeypatch):
 
     assert not db_instance.add_fact("Bad fact")
     assert "Bad fact" not in db_instance.get_all_facts()
+
 
 def test_search_facts(db_instance):
     db_instance.add_fact("Grug hunt mammoth.")
@@ -134,7 +140,6 @@ def test_search_facts(db_instance):
     assert "Grug think sky is blue." in results
 
 
-
 def test_get_all_facts(db_instance):
     db_instance.add_fact("Fact one.")
     db_instance.add_fact("Fact two.")
@@ -143,11 +148,13 @@ def test_get_all_facts(db_instance):
     assert "Fact one." in facts
     assert "Fact two." in facts
 
+
 def test_rebuild_index(db_instance):
     db_instance.add_fact("Fact for rebuild.")
     initial_ntotal = db_instance.index.ntotal
     db_instance.rebuild_index()
     assert db_instance.index.ntotal == initial_ntotal
+
 
 def test_db_close(db_instance):
     # The fixture handles closing, but we can test if it doesn't raise an error
@@ -157,6 +164,7 @@ def test_db_close(db_instance):
     new_db = GrugDB("test_grug_lore.db")
     assert new_db is not None
     new_db.close()
+
 
 def test_invalid_db_path():
     with pytest.raises(Exception):

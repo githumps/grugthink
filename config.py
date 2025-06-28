@@ -1,4 +1,3 @@
-
 import logging
 import os
 import re
@@ -34,7 +33,9 @@ logging.basicConfig(level=log_level)
 
 
 # --- Validation ---
-def is_valid_url(url): return re.match(r"^https?://", url)
+def is_valid_url(url):
+    return re.match(r"^https?://", url)
+
 
 for url in OLLAMA_URLS:
     if not is_valid_url(url):
@@ -77,4 +78,3 @@ def log_initial_settings():
     else:
         log.warning("[ENV] No trusted users configured. /learn command will be disabled for all.")
     log.info(f"[ENV] Log level set to {log_level_str}")
-

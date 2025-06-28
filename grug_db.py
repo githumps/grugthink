@@ -3,6 +3,7 @@
 Manages Grug's long-term memory using a relational database for facts
 and a vector index for semantic search.
 """
+
 import logging
 import os
 import sqlite3
@@ -14,12 +15,13 @@ from sentence_transformers import SentenceTransformer
 
 log = logging.getLogger(__name__)
 
+
 class GrugDB:
-    def __init__(self, db_path, model_name='all-MiniLM-L6-v2'):
+    def __init__(self, db_path, model_name="all-MiniLM-L6-v2"):
         self.db_path = db_path
-        self.index_path = db_path.replace('.db', '.index')
+        self.index_path = db_path.replace(".db", ".index")
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        local_model_path = os.path.join(current_dir, 'models', 'sentence-transformers', model_name)
+        local_model_path = os.path.join(current_dir, "models", "sentence-transformers", model_name)
         self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
         self.dimension = self.embedder.get_sentence_embedding_dimension()
 
@@ -166,20 +168,22 @@ class GrugDB:
                 self.conn.close()
                 log.info("[GRUGBRAIN] Database connection closed.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example usage and migration from grug_lore.json
     logging.basicConfig(level=logging.INFO)
     log.info("Running GrugDB standalone for migration...")
 
-    db = GrugDB(db_path='grug_lore.db')
+    db = GrugDB(db_path="grug_lore.db")
 
     # Migrate from old JSON file if it exists
-    json_lore_path = 'grug_lore.json'
+    json_lore_path = "grug_lore.json"
     if os.path.exists(json_lore_path):
         log.info(f"Found {json_lore_path}, attempting migration...")
         import json
+
         try:
-            with open(json_lore_path, 'r') as f:
+            with open(json_lore_path, "r") as f:
                 lore_data = json.load(f)
                 facts = lore_data.get("facts", [])
                 migrated_count = 0
@@ -188,7 +192,7 @@ if __name__ == '__main__':
                         migrated_count += 1
                 log.info(f"Migrated {migrated_count}/{len(facts)} new facts from JSON.")
                 # Rename the old file to prevent re-migration
-                os.rename(json_lore_path, json_lore_path + '.migrated')
+                os.rename(json_lore_path, json_lore_path + ".migrated")
                 log.info(f"Renamed {json_lore_path} to avoid re-migration.")
         except Exception as e:
             log.error(f"Error during migration: {e}")

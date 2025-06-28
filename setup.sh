@@ -6,6 +6,8 @@
 export PYTHONPATH=.
 
 # Install Grug's tools (dependencies)
+pip uninstall -y faiss-cpu numpy || true # Remove any existing faiss-cpu and numpy
+pip install --no-cache-dir --force-reinstall faiss-cpu==1.7.4 "numpy<2" # Install specific, known-good versions
 pip install -r requirements.txt -r requirements-dev.txt
 
 # Ensure pip-audit is installed for security checks
