@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Grug Verifier Bot – The All-Knowing Truthseer of the Tribe
-Grug now has a real brain (SQLite + FAISS) and can learn from the world (Google Search).
+"""GrugThink – Adaptable Personality Engine for Discord
+An AI bot that develops unique personalities for each Discord server.
+Supports organic personality evolution and self-naming capabilities.
 Run with PYTHONUNBUFFERED so every print is flushed immediately.
 """
 
 import asyncio
 import hashlib
-import random
 import re
 import signal
 import sys
@@ -22,6 +22,7 @@ from discord.ext import commands
 import config
 from grug_db import GrugServerManager
 from grug_structured_logger import get_logger
+from personality_engine import PersonalityEngine
 
 log = get_logger(__name__)
 
@@ -61,8 +62,9 @@ class LRUCache:
 response_cache = LRUCache(max_size=100, ttl_seconds=300)
 user_cooldowns = {}
 
-# Initialize Grug's Server Manager
-server_manager = GrugServerManager(config.DB_PATH, load_embedder=config.LOAD_EMBEDDER)
+# Initialize Server Manager and Personality Engine
+server_manager = GrugServerManager(config.DB_PATH)
+personality_engine = PersonalityEngine("personalities.db")
 
 
 def get_server_db(interaction_or_guild_id):
@@ -86,7 +88,7 @@ def log_initial_settings():
     log_level = getattr(logging, config.LOG_LEVEL_STR, logging.INFO)
     logging.basicConfig(level=log_level)
 
-    log.info("Grug is waking up...")
+    log.info("GrugThink personality engine is starting up...")
     if config.USE_GEMINI:
         log.info("Using Gemini for generation", extra={"model": config.GEMINI_MODEL})
     else:
@@ -94,7 +96,7 @@ def log_initial_settings():
     if config.CAN_SEARCH:
         log.info("Google Search is enabled.")
     else:
-        log.warning("Google Search is disabled. Grug cannot learn new things.")
+        log.warning("Google Search is disabled. Bot cannot learn new things from the internet.")
     if config.TRUSTED_USER_IDS:
         log.info("Trusted users configured", extra={"users": config.TRUSTED_USER_IDS})
     else:
@@ -105,31 +107,40 @@ def log_initial_settings():
 log_initial_settings()
 
 
-def build_grug_context(statement: str, server_db) -> str:
-    """Build Grug context with semantically relevant lore for this server."""
-    base_context = """You are Grug, the caveman truth verifier. You live in a big cave near the river with Og.
-Your wife is named Ugga and you have two children, Grog and Bork.
-You hunt mammoth, make fire, and know ancient wisdom. You speak in short caveman sentences.
-You are honest about real world facts but have your own caveman personality and history."""
+def build_personality_context(statement: str, server_db, server_id: str) -> str:
+    """Build personality context with semantically relevant lore for this server."""
+    personality = personality_engine.get_personality(server_id)
+
+    # Get base context from personality
+    base_context = personality.base_context
 
     # Find lore relevant to the current statement from this server's knowledge
     relevant_lore = server_db.search_facts(statement, k=5)
 
     if relevant_lore:
-        lore_context = f"\n\nGrug also remember these things: {' '.join(relevant_lore)}"
+        # Format lore based on personality style
+        if personality.response_style == "caveman":
+            bot_name = personality.chosen_name or personality.name
+            lore_context = f"\n\n{bot_name} also remember these things: {' '.join(relevant_lore)}"
+        elif personality.response_style == "british_working_class":
+            lore_context = f"\n\nI remember these bits: {' '.join(relevant_lore)}"
+        else:
+            lore_context = f"\n\nI also know: {' '.join(relevant_lore)}"
+
         return base_context + lore_context
 
     return base_context
 
 
-def build_grug_prompt(statement: str, server_db, external_info: str = "") -> str:
-    """Build complete Grug verification prompt with lore and external info."""
-    grug_context = build_grug_context(statement, server_db)
+def build_personality_prompt(statement: str, server_db, server_id: str, external_info: str = "") -> str:
+    """Build complete personality verification prompt with lore and external info."""
+    personality_context = build_personality_context(statement, server_db, server_id)
 
+    # Add external info using personality engine
     if external_info:
-        grug_context += f"\n\nGrug find this on magic talking rock (internet): {external_info}"
+        personality_context = personality_engine.get_context_prompt(server_id, external_info)
 
-    return f"""{grug_context}
+    return f"""{personality_context}
 
 You MUST be 100% ACCURATE about real world facts.
 
@@ -137,11 +148,11 @@ ABSOLUTE RULES:
 1. Real world facts = ALWAYS TRUE if factually correct.
 2. George Washington WAS president - this is FACT, say TRUE.
 3. Animals, science, history, geography = be TRUTHFUL.
-4. Speak like caveman but BE ACCURATE about facts.
-5. Format: TRUE/FALSE - caveman explanation.
+4. Stay in character but BE ACCURATE about facts.
+5. Format: TRUE/FALSE - character explanation.
 6. End with <END>.
 
-CRITICAL: Be factually accurate. Only use caveman voice for HOW you explain, not WHAT you conclude.
+CRITICAL: Be factually accurate. Only use your personality for HOW you explain, not WHAT you conclude.
 
 Statement: "{statement}"
 Answer:"""
@@ -216,7 +227,7 @@ def search_google(query: str) -> str:
     return ""
 
 
-def query_model(statement: str, server_db) -> str | None:
+def query_model(statement: str, server_db, server_id: str) -> str | None:
     """Unified query function for both Ollama and Gemini."""
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
@@ -238,7 +249,10 @@ def query_model(statement: str, server_db) -> str | None:
         log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
         external_info = search_google(clean_stmt)
 
-    prompt_text = build_grug_prompt(clean_stmt, server_db, external_info)
+    prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, external_info)
+
+    # Track personality evolution
+    personality_engine.evolve_personality(server_id, clean_stmt)
 
     if config.USE_GEMINI:
         return query_gemini_api(prompt_text, cache_key, server_db)
@@ -323,6 +337,18 @@ async def on_ready():
         log.error("Failed to sync commands", extra={"error": str(e)})
 
 
+@client.event
+async def on_guild_join(guild):
+    """Initialize personality when joining a new server."""
+    server_id = str(guild.id)
+    personality = personality_engine.get_personality(server_id)
+
+    log.info(
+        "Joined new server, personality initialized",
+        extra={"guild_id": server_id, "guild_name": guild.name, "personality_name": personality.name},
+    )
+
+
 GRUGBOT_VARIANT = config.GRUGBOT_VARIANT
 verify_cmd_name = "verify-dev" if GRUGBOT_VARIANT == "dev" else "verify"
 
@@ -345,33 +371,37 @@ async def _handle_verification(interaction: discord.Interaction):
         extra={"user_id": str(interaction.user.id), "target_length": len(target)},
     )
 
-    await interaction.response.defer(ephemeral=False)  # Tell Discord Grug is thinking
-    msg = await interaction.followup.send("Grug thinking...", ephemeral=False)
+    await interaction.response.defer(ephemeral=False)  # Tell Discord the bot is thinking
+
+    # Get server ID and personality info
+    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+    personality = personality_engine.get_personality(server_id)
+    thinking_msg = f"{personality.chosen_name or personality.name} thinking..."
+
+    msg = await interaction.followup.send(thinking_msg, ephemeral=False)
 
     try:
         # Get the server-specific database
         server_db = get_server_db(interaction)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, query_model, target, server_db)
+        result = await loop.run_in_executor(None, query_model, target, server_db, server_id)
 
         if result:
-            await msg.edit(content=f"Verification: {result}")
+            # Apply personality style to response
+            styled_result = personality_engine.get_response_with_style(server_id, result)
+            await msg.edit(content=f"Verification: {styled_result}")
         else:
-            error_messages = [
-                "Grug no hear truth. Try again.",
-                "Grug brain hurt. No can answer.",
-                "Truth hide from Grug. Wait little.",
-                "Sky spirit silent. Ask later.",
-                "Grug smash rock, find no answer.",
-            ]
-            await msg.edit(content=random.choice(error_messages))
+            error_msg = personality_engine.get_error_message(server_id)
+            await msg.edit(content=error_msg)
 
     except Exception as exc:
         log.error(
             "Slash command error",
             extra={"error": str(exc), "traceback": traceback.format_exc()},
         )
-        await msg.edit(content="💥 Truth overload! Grug head hurt.")
+        # Use personality for error message
+        error_msg = personality_engine.get_error_message(server_id)
+        await msg.edit(content=f"💥 {error_msg}")
 
 
 @tree.command(name=verify_cmd_name, description="Verify the truthfulness of the previous message.")
@@ -379,16 +409,32 @@ async def verify(interaction: discord.Interaction):
     await _handle_verification(interaction)
 
 
-@tree.command(name="learn", description="Teach Grug a new fact.")
-@app_commands.describe(fact="The fact Grug should learn.")
+@tree.command(name="learn", description="Teach the bot a new fact.")
+@app_commands.describe(fact="The fact to learn.")
 async def learn(interaction: discord.Interaction, fact: str):
-    await interaction.response.defer(ephemeral=True)  # Tell Discord Grug is thinking
+    await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
+
+    # Get personality info
+    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+    personality = personality_engine.get_personality(server_id)
+    bot_name = personality.chosen_name or personality.name
+
     if interaction.user.id not in config.TRUSTED_USER_IDS:
-        await interaction.followup.send("You not trusted to teach Grug.", ephemeral=True)
+        if personality.response_style == "caveman":
+            await interaction.followup.send(f"You not trusted to teach {bot_name}.", ephemeral=True)
+        elif personality.response_style == "british_working_class":
+            await interaction.followup.send("Not having that from you, mate.", ephemeral=True)
+        else:
+            await interaction.followup.send("You're not authorized to teach me facts.", ephemeral=True)
         return
 
     if len(fact.strip()) < 5:
-        await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
+        if personality.response_style == "caveman":
+            await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
+        elif personality.response_style == "british_working_class":
+            await interaction.followup.send("That's not much to go on, is it?", ephemeral=True)
+        else:
+            await interaction.followup.send("Please provide a more detailed fact.", ephemeral=True)
         return
 
     # Get the server-specific database
@@ -402,19 +448,41 @@ async def learn(interaction: discord.Interaction, fact: str):
                 "server_id": str(interaction.guild_id),
             },
         )
-        await interaction.followup.send(f"Grug learn: {fact}", ephemeral=True)
+        if personality.response_style == "caveman":
+            await interaction.followup.send(f"{bot_name} learn: {fact}", ephemeral=True)
+        elif personality.response_style == "british_working_class":
+            await interaction.followup.send(f"Right, got that: {fact}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"Learned: {fact}", ephemeral=True)
     else:
-        await interaction.followup.send("Grug already know that.", ephemeral=True)
+        if personality.response_style == "caveman":
+            await interaction.followup.send(f"{bot_name} already know that.", ephemeral=True)
+        elif personality.response_style == "british_working_class":
+            await interaction.followup.send("Already know that one, mate.", ephemeral=True)
+        else:
+            await interaction.followup.send("I already know that.", ephemeral=True)
 
 
-@tree.command(name="what-grug-know", description="See all the facts Grug knows.")
-async def what_grug_know(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)  # Tell Discord Grug is thinking
+@tree.command(name="what-know", description="See all the facts the bot knows.")
+async def what_know(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
+
+    # Get personality info
+    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+    personality = personality_engine.get_personality(server_id)
+    bot_name = personality.chosen_name or personality.name
+
     # Get the server-specific database
     server_db = get_server_db(interaction)
     all_facts = server_db.get_all_facts()
+
     if not all_facts:
-        await interaction.followup.send("Grug know nothing in this cave.", ephemeral=True)
+        if personality.response_style == "caveman":
+            await interaction.followup.send(f"{bot_name} know nothing in this cave.", ephemeral=True)
+        elif personality.response_style == "british_working_class":
+            await interaction.followup.send("Don't know anything yet, mate.", ephemeral=True)
+        else:
+            await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
         return
 
     # Format facts into a numbered list
@@ -422,9 +490,20 @@ async def what_grug_know(interaction: discord.Interaction):
 
     # Create a Discord embed for better formatting
     server_name = interaction.guild.name if interaction.guild else "DM"
+
+    if personality.response_style == "caveman":
+        title = f"{bot_name}'s Memories ({server_name})"
+        description = f"{bot_name} knows {len(all_facts)} things in this cave:"
+    elif personality.response_style == "british_working_class":
+        title = f"What I Know ({server_name})"
+        description = f"Got {len(all_facts)} things in me head:"
+    else:
+        title = f"Knowledge Base ({server_name})"
+        description = f"I know {len(all_facts)} facts:"
+
     embed = discord.Embed(
-        title=f"Grug's Memories ({server_name})",
-        description=f"Grug knows {len(all_facts)} things in this cave:",
+        title=title,
+        description=description,
         color=discord.Color.blue(),
     )
     embed.add_field(name="Facts", value=fact_list[:1024], inline=False)  # Embed field value limit is 1024
@@ -432,15 +511,57 @@ async def what_grug_know(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-@tree.command(name="grug-help", description="Shows what Grug can do.")
-async def grug_help(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="Grug Help", description="Here are the things Grug can do:", color=discord.Color.green()
-    )
+@tree.command(name="help", description="Shows what the bot can do.")
+async def help_command(interaction: discord.Interaction):
+    # Get personality info
+    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+    personality = personality_engine.get_personality(server_id)
+    bot_name = personality.chosen_name or personality.name
+
+    if personality.response_style == "caveman":
+        title = f"{bot_name} Help"
+        description = f"Here are the things {bot_name} can do:"
+    elif personality.response_style == "british_working_class":
+        title = "What I Can Do"
+        description = "Right, here's what I'm good for:"
+    else:
+        title = "Bot Help"
+        description = "Here are my available commands:"
+
+    embed = discord.Embed(title=title, description=description, color=discord.Color.green())
     embed.add_field(name="/verify", value="Verifies the truthfulness of the last message.", inline=False)
-    embed.add_field(name="/learn", value="Teach Grug a new fact (trusted users only).", inline=False)
-    embed.add_field(name="/what-grug-know", value="See all the facts Grug knows.", inline=False)
-    embed.add_field(name="/grug-help", value="Shows this help message.", inline=False)
+    embed.add_field(name="/learn", value="Teach me a new fact (trusted users only).", inline=False)
+    embed.add_field(name="/what-know", value="See all the facts I know.", inline=False)
+    embed.add_field(name="/personality", value="See my personality info and evolution.", inline=False)
+    embed.add_field(name="/help", value="Shows this help message.", inline=False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.command(name="personality", description="Shows the bot's personality information.")
+async def personality_info(interaction: discord.Interaction):
+    # Get personality info
+    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+    personality_info = personality_engine.get_personality_info(server_id)
+
+    embed = discord.Embed(
+        title=f"Personality: {personality_info['name']}",
+        description="My personality and evolution status",
+        color=discord.Color.purple(),
+    )
+
+    # Evolution stage descriptions
+    stage_names = ["Initial", "Developing", "Established", "Evolved"]
+    stage_name = stage_names[min(personality_info["evolution_stage"], 3)]
+
+    embed.add_field(name="Name", value=personality_info["name"], inline=True)
+    embed.add_field(name="Evolution Stage", value=f"{stage_name} ({personality_info['evolution_stage']})", inline=True)
+    embed.add_field(name="Interactions", value=str(personality_info["interaction_count"]), inline=True)
+    embed.add_field(name="Style", value=personality_info["style"], inline=True)
+
+    if personality_info["quirks"]:
+        quirks_text = ", ".join(personality_info["quirks"])
+        embed.add_field(name="Developed Quirks", value=quirks_text, inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -473,7 +594,7 @@ def main():
         sys.exit(1)
     finally:
         server_manager.close_all()  # Ensure all DB connections are closed gracefully if not already by signal
-        log.info("Grug has left all caves.")
+        log.info("GrugThink personality engine has shut down.")
         sys.exit(0)
 
 

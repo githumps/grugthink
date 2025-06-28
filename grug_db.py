@@ -138,7 +138,9 @@ class GrugDB:
         """Initialize SQLite database and create facts table."""
         try:
             # Ensure the directory for the database file exists
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            db_dir = os.path.dirname(self.db_path)
+            if db_dir:  # Only create directory if db_path has a directory component
+                os.makedirs(db_dir, exist_ok=True)
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             cursor = self.conn.cursor()
             cursor.execute("""
