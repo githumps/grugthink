@@ -13,11 +13,10 @@ import sys
 import time
 import traceback
 
-
 import discord
-from discord.ext import commands
-from discord import app_commands
 import requests
+from discord import app_commands
+from discord.ext import commands
 
 import config
 from grug_db import GrugDB
@@ -285,7 +284,7 @@ async def learn(interaction: discord.Interaction, fact: str):
     if interaction.user.id not in config.TRUSTED_USER_IDS:
         await interaction.followup.send("You not trusted to teach Grug.", ephemeral=True)
         return
-    
+
     if len(fact.strip()) < 5:
         await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
         return

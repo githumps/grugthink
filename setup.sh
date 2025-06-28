@@ -13,3 +13,7 @@ pip install pip-audit
 
 # Grug also likes clean words, so ensure ruff is available
 pip install ruff
+
+# Run Grug's basic health checks
+python check_libs.py
+python check_model.py
