@@ -71,14 +71,15 @@ class GrugDB:
 
         with self.lock:
             try:
-                # Add to SQLite DB
-                cursor = self.conn.cursor()
-                cursor.execute("INSERT INTO facts (content) VALUES (?)", (fact_text,))
-                fact_id = cursor.lastrowid
-                self.conn.commit()
-
-                # Add to FAISS index
-                self.index.add_with_ids(embedding, np.array([fact_id]))
+                # Use a transaction so DB insert and index update succeed or fail together
+                with self.conn:
+                    cursor = self.conn.execute(
+                        "INSERT INTO facts (content) VALUES (?)",
+                        (fact_text,),
+                    )
+                    fact_id = cursor.lastrowid
+                    # If this raises, the transaction will be rolled back
+                    self.index.add_with_ids(embedding, np.array([fact_id]))
 
                 log.info(f"[GRUGBRAIN] Added fact #{fact_id}: {fact_text}")
                 return True
