@@ -252,8 +252,8 @@ async def _handle_verification(interaction: discord.Interaction):
     target = history[0].content
     log.info(f"[VERIFY] User: {interaction.user.name}, Target: {target[:100]}...")
 
-    await interaction.response.send_message("Grug thinking...", ephemeral=False)
-    msg = await interaction.original_response()
+    await interaction.response.defer(ephemeral=False) # Tell Discord Grug is thinking
+    msg = await interaction.followup.send("Grug thinking...", ephemeral=False)
 
     try:
         loop = asyncio.get_running_loop()
@@ -281,19 +281,20 @@ async def verify(interaction: discord.Interaction):
 @tree.command(name="learn", description="Teach Grug a new fact.")
 @app_commands.describe(fact="The fact Grug should learn.")
 async def learn(interaction: discord.Interaction, fact: str):
+    await interaction.response.defer(ephemeral=True) # Tell Discord Grug is thinking
     if interaction.user.id not in config.TRUSTED_USER_IDS:
-        await interaction.response.send_message("You not trusted to teach Grug.", ephemeral=True)
+        await interaction.followup.send("You not trusted to teach Grug.", ephemeral=True)
         return
     
     if len(fact.strip()) < 5:
-        await interaction.response.send_message("Fact too short to be useful.", ephemeral=True)
+        await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
         return
 
     if db.add_fact(fact):
         log.info(f"[LEARN] User {interaction.user.name} taught Grug: {fact}")
-        await interaction.response.send_message(f"Grug learn: {fact}", ephemeral=True)
+        await interaction.followup.send(f"Grug learn: {fact}", ephemeral=True)
     else:
-        await interaction.response.send_message("Grug already know that.", ephemeral=True)
+        await interaction.followup.send("Grug already know that.", ephemeral=True)
 
 @tree.command(name="what-grug-know", description="See all the facts Grug knows.")
 async def what_grug_know(interaction: discord.Interaction):
@@ -314,7 +315,7 @@ async def what_grug_know(interaction: discord.Interaction):
     )
     embed.add_field(name="Facts", value=fact_list[:1024], inline=False) # Embed field value limit is 1024
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 @tree.command(name="grug-help", description="Shows what Grug can do.")
 async def grug_help(interaction: discord.Interaction):
