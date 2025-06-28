@@ -22,6 +22,9 @@ DB_PATH = os.path.join(DATA_DIR, "grug_lore.db")
 GRUGBOT_VARIANT = os.getenv("GRUGBOT_VARIANT", "prod")
 TRUSTED_USER_IDS = [int(uid) for uid in os.getenv("TRUSTED_USER_IDS", "").split(",") if uid.strip()]
 
+# Whether to load the heavy embedding model at startup. Set to 'False' for lightweight deployments.
+LOAD_EMBEDDER = os.getenv("LOAD_EMBEDDER", "True").lower() == "true"
+
 # --- Logging Configuration ---
 LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
 

@@ -1,5 +1,4 @@
 import importlib.util
-import os
 import pickle
 import sys
 import types
@@ -78,27 +77,19 @@ from grug_db import GrugDB
 
 
 @pytest.fixture(scope="function")
-def db_instance():
-    # Setup: Create a temporary database for testing
-    test_db_path = "test_grug_lore.db"
+def db_instance(tmp_path):
+    # Setup: Create a temporary directory for the database files
+    test_db_dir = tmp_path / "grug_test_db"
+    test_db_dir.mkdir()
+    test_db_path = str(test_db_dir / "test_grug_lore.db")
     test_server_id = "test_server"
-    test_index_path = test_db_path.replace(".db", f"_{test_server_id}.index")
 
-    # Clean up any previous test artifacts
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-    if os.path.exists(test_index_path):
-        os.remove(test_index_path)
-
-    db = GrugDB(test_db_path, server_id=test_server_id)
+    db = GrugDB(test_db_path, server_id=test_server_id, load_embedder=True)
     yield db
 
     # Teardown: Close the database and remove the test files
     db.close()
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-    if os.path.exists(test_index_path):
-        os.remove(test_index_path)
+    # tmp_path fixture handles cleanup of the directory
 
 
 def test_add_fact(db_instance):
@@ -157,12 +148,12 @@ def test_rebuild_index(db_instance):
     assert db_instance.index.ntotal == initial_ntotal
 
 
-def test_db_close(db_instance):
+def test_db_close(db_instance, tmp_path):
     # The fixture handles closing, but we can test if it doesn't raise an error
     # when called explicitly (though it's usually called once in teardown)
     db_instance.close()
     # Re-initializing to ensure it can be opened again after close
-    new_db = GrugDB("test_grug_lore.db")
+    new_db = GrugDB(str(tmp_path / "test_grug_lore_new.db"), load_embedder=True)
     assert new_db is not None
     new_db.close()
 

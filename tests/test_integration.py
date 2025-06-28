@@ -174,7 +174,7 @@ class TestDatabaseIntegration:
 
         try:
             # Initialize database (uses mocked FAISS and sentence-transformers)
-            db = GrugDB(db_path)
+            db = GrugDB(db_path, load_embedder=True)
 
             # Add some facts
             assert db.add_fact("Grug hunt mammoth in winter.")
@@ -215,6 +215,9 @@ class TestConfigurationIntegration:
         monkeypatch.setenv("DISCORD_TOKEN", "test_token_123")
         monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
         monkeypatch.delenv("OLLAMA_URLS", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_CSE_ID", raising=False)
+        monkeypatch.setenv("GRUGBOT_VARIANT", "prod")
 
         # Reload config module
         import sys

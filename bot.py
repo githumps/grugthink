@@ -62,7 +62,7 @@ response_cache = LRUCache(max_size=100, ttl_seconds=300)
 user_cooldowns = {}
 
 # Initialize Grug's Server Manager
-server_manager = GrugServerManager(config.DB_PATH)
+server_manager = GrugServerManager(config.DB_PATH, load_embedder=config.LOAD_EMBEDDER)
 
 
 def get_server_db(interaction_or_guild_id):

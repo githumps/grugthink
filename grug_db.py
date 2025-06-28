@@ -31,30 +31,34 @@ log = get_logger(__name__)
 
 
 class GrugDB:
-    def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global"):
+    def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global", load_embedder=True):
         self.db_path = db_path
         self.server_id = str(server_id)  # Ensure server_id is string
         self.index_path = db_path.replace(".db", f"_{self.server_id}.index")
+        self.embedder = None
+        self.dimension = 384  # Default dimension, will be updated if embedder loads
 
-        # Handle case where SentenceTransformer is mocked or unavailable
-        if SentenceTransformer is None:
-            # Use mocked version from conftest.py or create a simple fallback
-            import sys
+        if load_embedder:
+            # Handle case where SentenceTransformer is mocked or unavailable
+            if SentenceTransformer is None:
+                # Use mocked version from conftest.py or create a simple fallback
+                import sys
 
-            if "sentence_transformers" in sys.modules:
-                # Mocked version available
-                self.embedder = sys.modules["sentence_transformers"].SentenceTransformer(model_name)
-                self.dimension = self.embedder.get_sentence_embedding_dimension()
+                if "sentence_transformers" in sys.modules:
+                    # Mocked version available
+                    self.embedder = sys.modules["sentence_transformers"].SentenceTransformer(model_name)
+                    self.dimension = self.embedder.get_sentence_embedding_dimension()
+                else:
+                    # Fallback for testing, embedder remains None
+                    log.warning("SentenceTransformer not available, semantic search will be disabled.")
             else:
-                # Fallback for testing
-                self.embedder = None
-                self.dimension = 384
+                # Normal operation with real SentenceTransformer
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                local_model_path = os.path.join(current_dir, "models", "sentence-transformers", model_name)
+                self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
+                self.dimension = self.embedder.get_sentence_embedding_dimension()
         else:
-            # Normal operation with real SentenceTransformer
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            local_model_path = os.path.join(current_dir, "models", "sentence-transformers", model_name)
-            self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
-            self.dimension = self.embedder.get_sentence_embedding_dimension()
+            log.info("Embedder loading skipped. Semantic search will be disabled.")
 
         self.conn = None
         self.index = None
@@ -66,6 +70,8 @@ class GrugDB:
     def _init_db(self):
         """Initialize SQLite database and create facts table."""
         try:
+            # Ensure the directory for the database file exists
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -265,12 +271,13 @@ class GrugDB:
 class GrugServerManager:
     """Manages separate GrugDB instances for each Discord server."""
 
-    def __init__(self, base_db_path, model_name="all-MiniLM-L6-v2"):
+    def __init__(self, base_db_path, model_name="all-MiniLM-L6-v2", load_embedder=True):
         self.base_db_path = base_db_path
         self.model_name = model_name
+        self.load_embedder = load_embedder
         self.server_dbs = {}
         self.lock = threading.Lock()
-        log.info("Grug server manager initialized", extra={"base_path": base_db_path})
+        log.info("Grug server manager initialized", extra={"base_path": base_db_path, "load_embedder": load_embedder})
 
     def get_server_db(self, server_id) -> GrugDB:
         """Get or create a GrugDB instance for a specific server."""
@@ -279,7 +286,7 @@ class GrugServerManager:
         with self.lock:
             if server_id not in self.server_dbs:
                 log.info("Creating new Grug brain for server", extra={"server_id": server_id})
-                self.server_dbs[server_id] = GrugDB(self.base_db_path, self.model_name, server_id)
+                self.server_dbs[server_id] = GrugDB(self.base_db_path, self.model_name, server_id, self.load_embedder)
             return self.server_dbs[server_id]
 
     def close_all(self):

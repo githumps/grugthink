@@ -24,6 +24,7 @@ mock_config.OLLAMA_URLS = []
 mock_config.OLLAMA_MODELS = []
 mock_config.DB_PATH = "test_grug_lore.db"
 mock_config.LOG_LEVEL_STR = "INFO"  # Corrected: Use LOG_LEVEL_STR
+mock_config.LOAD_EMBEDDER = True
 
 # Global mocks for bot.server_manager and bot.query_model
 _mock_bot_db = MagicMock()
