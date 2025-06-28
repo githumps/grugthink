@@ -13,7 +13,9 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-log = logging.getLogger(__name__)
+from grug_structured_logger import get_logger
+
+log = get_logger(__name__)
 
 
 class GrugDB:
@@ -45,9 +47,9 @@ class GrugDB:
                 )
             """)
             self.conn.commit()
-            log.info(f"[GRUGBRAIN] Database initialized at {self.db_path}")
+            log.info("Database initialized", extra={"db_path": self.db_path})
         except Exception as e:
-            log.error(f"[GRUGBRAIN] Error initializing database: {e}")
+            log.error("Error initializing database", extra={"error": str(e)})
             raise
 
     def _load_index(self):
@@ -55,16 +57,16 @@ class GrugDB:
         if os.path.exists(self.index_path):
             try:
                 self.index = faiss.read_index(self.index_path)
-                log.info(f"[GRUGBRAIN] Loaded FAISS index with {self.index.ntotal} vectors.")
+                log.info("Loaded FAISS index", extra={"index_path": self.index_path, "vectors": self.index.ntotal})
             except Exception as e:
-                log.error(f"[GRUGBRAIN] Failed to load FAISS index: {e}, creating new one.")
+                log.error("Failed to load FAISS index, creating new one", extra={"error": str(e)})
                 self._create_new_index()
         else:
             self._create_new_index()
 
     def _create_new_index(self):
         """Create a new FAISS index and build it from existing DB facts."""
-        log.info("[GRUGBRAIN] Creating new FAISS index.")
+        log.info("Creating new FAISS index")
         self.index = faiss.IndexIDMap(faiss.IndexFlatL2(self.dimension))
         self.rebuild_index()
 
@@ -85,13 +87,13 @@ class GrugDB:
                     # If this raises, the transaction will be rolled back
                     self.index.add_with_ids(embedding, np.array([fact_id]))
 
-                log.info(f"[GRUGBRAIN] Added fact #{fact_id}: {fact_text}")
+                log.info("Added fact", extra={"fact_id": fact_id, "fact": fact_text})
                 return True
             except sqlite3.IntegrityError:
-                log.warning(f"[GRUGBRAIN] Fact already exists: {fact_text}")
+                log.warning("Fact already exists", extra={"fact": fact_text})
                 return False
             except Exception as e:
-                log.error(f"[GRUGBRAIN] Error adding fact: {e}")
+                log.error("Error adding fact", extra={"error": str(e)})
                 return False
 
     def search_facts(self, query: str, k: int = 5) -> list[str]:
@@ -117,10 +119,10 @@ class GrugDB:
                     if row:
                         results.append(row[0])
 
-                log.info(f"[GRUGBRAIN] Found {len(results)} results for query: '{query}'")
+                log.info("Found results for query", extra={"query": query, "results": len(results)})
                 return results
             except Exception as e:
-                log.error(f"[GRUGBRAIN] Error searching facts: {e}")
+                log.error("Error searching facts", extra={"error": str(e)})
                 return []
 
     def get_all_facts(self) -> list[str]:
@@ -131,7 +133,7 @@ class GrugDB:
                 cursor.execute("SELECT content FROM facts ORDER BY timestamp DESC")
                 return [row[0] for row in cursor.fetchall()]
             except Exception as e:
-                log.error(f"[GRUGBRAIN] Error getting all facts: {e}")
+                log.error("Error getting all facts", extra={"error": str(e)})
                 return []
 
     def save_index(self):
@@ -139,13 +141,13 @@ class GrugDB:
         with self.lock:
             try:
                 faiss.write_index(self.index, self.index_path)
-                log.info(f"[GRUGBRAIN] FAISS index saved to {self.index_path}")
+                log.info("FAISS index saved", extra={"index_path": self.index_path})
             except Exception as e:
-                log.error(f"[GRUGBRAIN] Error saving FAISS index: {e}")
+                log.error("Error saving FAISS index", extra={"error": str(e)})
 
     def rebuild_index(self):
         """Rebuild the entire FAISS index from the SQLite database."""
-        log.info("[GRUGBRAIN] Rebuilding FAISS index from scratch...")
+        log.info("Rebuilding FAISS index from scratch...")
         with self.lock:
             self.index.reset()
             cursor = self.conn.cursor()
@@ -158,7 +160,7 @@ class GrugDB:
                 embeddings = self.embedder.encode(contents)
                 self.index.add_with_ids(embeddings, ids)
 
-        log.info(f"[GRUGBRAIN] Index rebuilt with {self.index.ntotal} vectors.")
+        log.info("Index rebuilt", extra={"vectors": self.index.ntotal})
 
     def close(self):
         """Close the database connection and save the index."""
@@ -166,7 +168,7 @@ class GrugDB:
         if self.conn:
             with self.lock:
                 self.conn.close()
-                log.info("[GRUGBRAIN] Database connection closed.")
+                log.info("Database connection closed.")
 
 
 if __name__ == "__main__":
@@ -179,7 +181,7 @@ if __name__ == "__main__":
     # Migrate from old JSON file if it exists
     json_lore_path = "grug_lore.json"
     if os.path.exists(json_lore_path):
-        log.info(f"Found {json_lore_path}, attempting migration...")
+        log.info("Found old lore file, attempting migration", extra={"path": json_lore_path})
         import json
 
         try:
@@ -190,12 +192,12 @@ if __name__ == "__main__":
                 for fact in facts:
                     if db.add_fact(fact):
                         migrated_count += 1
-                log.info(f"Migrated {migrated_count}/{len(facts)} new facts from JSON.")
+                log.info("Migration complete", extra={"migrated": migrated_count, "total": len(facts)})
                 # Rename the old file to prevent re-migration
                 os.rename(json_lore_path, json_lore_path + ".migrated")
-                log.info(f"Renamed {json_lore_path} to avoid re-migration.")
+                log.info("Renamed old lore file to avoid re-migration")
         except Exception as e:
-            log.error(f"Error during migration: {e}")
+            log.error("Error during migration", extra={"error": str(e)})
 
     # Test search
     print("\n--- Testing Search ---")

@@ -1,13 +1,9 @@
-import logging
 import os
 import re
-
-log = logging.getLogger(__name__)
 
 # --- Discord Configuration ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
-    log.error("[FATAL] DISCORD_TOKEN not set in environment")
     raise ValueError("Missing DISCORD_TOKEN")
 
 # --- LLM Configuration ---
@@ -27,14 +23,22 @@ GRUGBOT_VARIANT = os.getenv("GRUGBOT_VARIANT", "prod")
 TRUSTED_USER_IDS = [int(uid) for uid in os.getenv("TRUSTED_USER_IDS", "").split(",") if uid.strip()]
 
 # --- Logging Configuration ---
-log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-logging.basicConfig(level=log_level)
+LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
 
 
 # --- Validation ---
 def is_valid_url(url):
-    return re.match(r"^https?://", url)
+    # More robust regex for URL validation
+    regex = re.compile(
+        r"^(?:http)s?://"  # http:// or https://
+        r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|"  # domain...
+        r"localhost|"  # localhost...
+        r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"  # ...or ip
+        r"(?::\d+)?"  # optional port
+        r"(?:/?|[/?]\S+)",
+        re.IGNORECASE,
+    )
+    return re.match(regex, url) is not None
 
 
 for url in OLLAMA_URLS:
@@ -56,25 +60,20 @@ if GOOGLE_CSE_ID and not re.match(r"^[\w\-]+$", GOOGLE_CSE_ID):
 
 USE_GEMINI = bool(GEMINI_API_KEY)
 if not USE_GEMINI and not OLLAMA_URLS:
-    log.error("[FATAL] Neither GEMINI_API_KEY nor OLLAMA_URLS provided")
     raise ValueError("Missing LLM configuration")
 
 CAN_SEARCH = bool(GOOGLE_API_KEY and GOOGLE_CSE_ID)
 
 
 def log_initial_settings():
-    """Logs the initial configuration settings."""
-    log.info("[BOOT] Grug is waking up...")
-    if USE_GEMINI:
-        log.info(f"[ENV] Using Gemini for generation (Model: {GEMINI_MODEL})")
-    else:
-        log.info(f"[ENV] Using Ollama for generation: {OLLAMA_URLS} with models {OLLAMA_MODELS}")
-    if CAN_SEARCH:
-        log.info("[ENV] Google Search is enabled.")
-    else:
-        log.warning("[ENV] Google Search is disabled. Grug cannot learn new things.")
-    if TRUSTED_USER_IDS:
-        log.info(f"[ENV] Trusted users configured: {TRUSTED_USER_IDS}")
-    else:
-        log.warning("[ENV] No trusted users configured. /learn command will be disabled for all.")
-    log.info(f"[ENV] Log level set to {log_level_str}")
+    """Log initial configuration settings for debugging."""
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info("Configuration loaded", extra={
+        "variant": GRUGBOT_VARIANT,
+        "use_gemini": USE_GEMINI,
+        "can_search": CAN_SEARCH,
+        "trusted_users_count": len(TRUSTED_USER_IDS),
+        "log_level": LOG_LEVEL_STR
+    })

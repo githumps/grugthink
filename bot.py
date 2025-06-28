@@ -6,7 +6,6 @@ Run with PYTHONUNBUFFERED so every print is flushed immediately.
 
 import asyncio
 import hashlib
-import logging
 import random
 import re
 import signal
@@ -21,13 +20,41 @@ from discord.ext import commands
 
 import config
 from grug_db import GrugDB
+from grug_structured_logger import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
+
+# Cache and rate limiting
+response_cache = {}
+user_cooldowns = {}
 
 # Initialize Grug's Brain
 db = GrugDB(config.DB_PATH)
 
-config.log_initial_settings()
+
+def log_initial_settings():
+    import logging
+
+    log_level = getattr(logging, config.LOG_LEVEL_STR, logging.INFO)
+    logging.basicConfig(level=log_level)
+
+    log.info("Grug is waking up...")
+    if config.USE_GEMINI:
+        log.info("Using Gemini for generation", extra={"model": config.GEMINI_MODEL})
+    else:
+        log.info("Using Ollama for generation", extra={"urls": config.OLLAMA_URLS, "models": config.OLLAMA_MODELS})
+    if config.CAN_SEARCH:
+        log.info("Google Search is enabled.")
+    else:
+        log.warning("Google Search is disabled. Grug cannot learn new things.")
+    if config.TRUSTED_USER_IDS:
+        log.info("Trusted users configured", extra={"users": config.TRUSTED_USER_IDS})
+    else:
+        log.warning("No trusted users configured. /learn command will be disabled for all.")
+    log.info("Log level set", extra={"level": config.LOG_LEVEL_STR})
+
+
+log_initial_settings()
 
 
 def build_grug_context(statement: str) -> str:
@@ -120,11 +147,11 @@ def extract_lore_from_response(response: str):
             sentence_clean = sentence.strip().capitalize()
             if sentence_clean and len(sentence_clean) > 15 and not sentence_clean.startswith(("TRUE", "FALSE")):
                 if db.add_fact(sentence_clean):
-                    log.info(f"[GRUGBRAIN] New lore learned: {sentence_clean}")
+                    log.info("New lore learned", extra={"lore": sentence_clean})
                 else:
-                    log.info(f"[GRUGBRAIN] Lore already known: {sentence_clean}")
+                    log.info("Lore already known", extra={"lore": sentence_clean})
     except Exception as e:
-        log.error(f"[GRUGBRAIN] Error extracting lore: {e}")
+        log.error("Error extracting lore", extra={"error": str(e)})
 
 
 def search_google(query: str) -> str:
@@ -140,7 +167,7 @@ def search_google(query: str) -> str:
             snippets = [item.get("snippet", "") for item in results[:3]]
             return " ".join(snippets).replace("\n", "")
     except Exception as e:
-        log.error(f"[GOOGLE] Search failed: {e}")
+        log.error("Google search failed", extra={"error": str(e)})
     return ""
 
 
@@ -153,7 +180,7 @@ def query_model(statement: str) -> str | None:
     if cache_key in response_cache:
         cache_time, cached_response = response_cache[cache_key]
         if time.time() - cache_time < 300:
-            log.info("[CACHE] Using cached response")
+            log.info("Using cached response", extra={"cache_key": cache_key})
             return cached_response
 
     clean_stmt = clean_statement(statement)
@@ -164,7 +191,7 @@ def query_model(statement: str) -> str | None:
     relevant_lore = db.search_facts(clean_stmt, k=1)
     external_info = ""
     if not relevant_lore:  # If no strong internal signal, search web
-        log.info(f"[BRAIN] No strong memory for '{clean_stmt}', searching web.")
+        log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
         external_info = search_google(clean_stmt)
 
     prompt_text = build_grug_prompt(clean_stmt, external_info)
@@ -176,7 +203,7 @@ def query_model(statement: str) -> str | None:
 
 
 def query_ollama_api(prompt_text: str, cache_key: str) -> str | None:
-    log.info("[OLLAMA] Querying with integrated prompt.")
+    log.info("Querying Ollama with integrated prompt")
     for idx, url in enumerate(config.OLLAMA_URLS):
         raw_model = config.OLLAMA_MODELS[idx] if idx < len(config.OLLAMA_MODELS) else config.OLLAMA_MODELS[0]
         try:
@@ -193,12 +220,12 @@ def query_ollama_api(prompt_text: str, cache_key: str) -> str | None:
                 if validated:
                     return validated
         except requests.exceptions.RequestException as e:
-            log.error(f"[OLLAMA] Request to {url} failed: {e}")
+            log.error("Ollama request failed", extra={"url": url, "error": str(e)})
     return None
 
 
 def query_gemini_api(prompt_text: str, cache_key: str) -> str | None:
-    log.info("[GEMINI] Querying with integrated prompt.")
+    log.info("Querying Gemini with integrated prompt")
     try:
         import google.generativeai as genai
 
@@ -209,14 +236,14 @@ def query_gemini_api(prompt_text: str, cache_key: str) -> str | None:
         if validated:
             return validated
     except Exception as e:
-        log.error(f"[GEMINI] API call failed: {e}")
+        log.error("Gemini API call failed", extra={"error": str(e)})
     return None
 
 
 def validate_and_process_response(response: str, cache_key: str) -> str | None:
     """Centralized response validation and processing."""
     response = response.split("<END>")[0].strip()
-    log.info(f"[RESPONSE] Raw: {response[:200]}")
+    log.info("Raw response from model", extra={"response": response[:200]})
 
     true_match = re.search(r"\bTRUE\b", response, re.IGNORECASE)
     false_match = re.search(r"\bFALSE\b", response, re.IGNORECASE)
@@ -235,20 +262,20 @@ def validate_and_process_response(response: str, cache_key: str) -> str | None:
                 if len(full_response.split()) >= 4 and len(full_response) >= 20:
                     response_cache[cache_key] = (time.time(), full_response)
                     extract_lore_from_response(full_response)
-                    log.info(f"[RESPONSE] Validated: {full_response}")
+                    log.info("Validated response", extra={"response": full_response[:200]})
                     return full_response
-    log.warning(f"[RESPONSE] Invalid format, discarding: {response[:200]}")
+    log.warning("Invalid format, discarding", extra={"response": response[:200]})
     return None
 
 
 @client.event
 async def on_ready():
-    log.info(f"[DISCORD] Logged in as {client.user}")
+    log.info("Logged in to Discord", extra={"user": str(client.user)})
     try:
         await tree.sync()
-        log.info("[DISCORD] Commands synced")
+        log.info("Commands synced")
     except Exception as e:
-        log.error(f"[DISCORD] Failed to sync commands: {e}")
+        log.error("Failed to sync commands", extra={"error": str(e)})
 
 
 GRUGBOT_VARIANT = config.GRUGBOT_VARIANT
@@ -268,7 +295,10 @@ async def _handle_verification(interaction: discord.Interaction):
         return
 
     target = history[0].content
-    log.info(f"[VERIFY] User: {interaction.user.name}, Target: {target[:100]}...")
+    log.info(
+        "Verify command initiated",
+        extra={"user_id": str(interaction.user.id), "target_length": len(target)},
+    )
 
     await interaction.response.defer(ephemeral=False)  # Tell Discord Grug is thinking
     msg = await interaction.followup.send("Grug thinking...", ephemeral=False)
@@ -290,8 +320,10 @@ async def _handle_verification(interaction: discord.Interaction):
             await msg.edit(content=random.choice(error_messages))
 
     except Exception as exc:
-        log.error(f"[DISCORD] Slash command error: {exc}")
-        log.error(traceback.format_exc())
+        log.error(
+            "Slash command error",
+            extra={"error": str(exc), "traceback": traceback.format_exc()},
+        )
         await msg.edit(content="💥 Truth overload! Grug head hurt.")
 
 
@@ -313,7 +345,7 @@ async def learn(interaction: discord.Interaction, fact: str):
         return
 
     if db.add_fact(fact):
-        log.info(f"[LEARN] User {interaction.user.name} taught Grug: {fact}")
+        log.info("Fact learned", extra={"user_id": str(interaction.user.id), "fact_length": len(fact)})
         await interaction.followup.send(f"Grug learn: {fact}", ephemeral=True)
     else:
         await interaction.followup.send("Grug already know that.", ephemeral=True)
@@ -353,11 +385,11 @@ async def grug_help(interaction: discord.Interaction):
 
 
 def main():
-    log.info("[BOOT] Connecting to Discord gateway …")
+    log.info("Connecting to Discord gateway...")
 
     # Signal handler for graceful shutdown
     def signal_handler(signum, frame):
-        log.info(f"[SHUTDOWN] Received signal {signum}. Shutting down gracefully...")
+        log.info("Received signal, shutting down gracefully", extra={"signal": signum})
         db.close()
         sys.exit(0)
 
@@ -367,18 +399,20 @@ def main():
     try:
         client.run(config.DISCORD_TOKEN)
     except discord.LoginFailure:
-        log.fatal("[FATAL] Discord bot token is invalid. Please check your config.DISCORD_TOKEN.")
+        log.fatal("Discord bot token is invalid. Please check your config.DISCORD_TOKEN.")
         sys.exit(1)
     except discord.ConnectionClosed as e:
-        log.error(f"[DISCORD] Discord connection closed unexpectedly: {e}")
+        log.error("Discord connection closed unexpectedly", extra={"error": str(e)})
         # Attempt to reconnect or handle gracefully
     except Exception as exc:
-        log.fatal(f"[FATAL] Unhandled exception in Discord client: {exc}")
-        log.fatal(traceback.format_exc())
+        log.fatal(
+            "Unhandled exception in Discord client",
+            extra={"error": str(exc), "traceback": traceback.format_exc()},
+        )
         sys.exit(1)
     finally:
         db.close()  # Ensure DB connection is closed gracefully if not already by signal
-        log.info("[BOOT] Grug has left the cave.")
+        log.info("Grug has left the cave.")
         sys.exit(0)
 
 
