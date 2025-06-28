@@ -24,6 +24,27 @@ Grug is a Discord bot written in Python. He uses a simple SQLite database to sto
 
 For how to wake Grug up, see `DEPLOYMENT.md`.
 
+## Getting Started
+
+1.  **Make Magic Air (Virtual Environment):**
+    ```bash
+    python3.11 -m venv venv
+    source venv/bin/activate
+    ```
+2.  **Give Grug Tools:**
+    ```bash
+    pip install -r requirements.txt -r requirements-dev.txt
+    ```
+3.  **Check Grug Words:**
+    ```bash
+    ruff check .
+    ruff format .
+    ```
+4.  **Sharpen Grug Spear:**
+    ```bash
+    PYTHONPATH=. pytest
+    ```
+
 ## License and Usage
 
 This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify and share the software for **noncommercial** purposes only. Any kind of commercial use is not permitted.
