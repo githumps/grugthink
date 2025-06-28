@@ -79,8 +79,25 @@ def mock_heavy_dependencies():
                 import numpy as np
                 if isinstance(texts, str):
                     texts = [texts]
-                # Return fake embeddings
-                return np.random.random((len(texts), 384)).astype(np.float32)
+                # Create deterministic embeddings with basic semantic similarity
+                embeddings = []
+                for text in texts:
+                    # Create embedding based on simple word features
+                    words = text.lower().split()
+                    embedding = np.zeros(384, dtype=np.float32)
+
+                    # Use word hashes as features - deterministic but varied
+                    for i, word in enumerate(words):
+                        word_hash = hash(word) % 384
+                        embedding[word_hash] += 1.0 / (i + 1)  # Earlier words have higher weight
+
+                    # Normalize to unit vector for cosine similarity
+                    norm = np.linalg.norm(embedding)
+                    if norm > 0:
+                        embedding = embedding / norm
+
+                    embeddings.append(embedding)
+                return np.array(embeddings, dtype=np.float32)
 
             def get_sentence_embedding_dimension(self):
                 return 384

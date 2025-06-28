@@ -188,6 +188,16 @@ if self.embedder is None or self.index is None or np is None:
 
 **Test Results**: All 38 tests pass, CI simulation successful without heavy dependencies
 
+### Issue: Non-deterministic Test Failure ✅
+**Problem**: `test_search_facts` failing in CI due to random embeddings in mock
+**Root Cause**: `SentenceTransformer.encode()` mock used `np.random.random()`, causing unpredictable search results
+**Solution**: Created deterministic word-based embedding mock with semantic similarity
+
+**Files Modified**:
+- `conftest.py:78-100`: Replaced random embeddings with deterministic word-hash embeddings
+- **Approach**: Use word hashes as features, positional weighting, normalized vectors
+- **Result**: Semantic queries like "what grug hunt?" correctly match "Grug hunt mammoth."
+
 ### Security Fix Maintained ✅
 - Memory-bounded cache prevents DoS attacks
 - All previous security logging improvements preserved
