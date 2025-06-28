@@ -30,6 +30,41 @@ from grug_structured_logger import get_logger
 log = get_logger(__name__)
 
 
+def download_model(model_name="all-MiniLM-L6-v2"):
+    """Pre-download a SentenceTransformer model for offline use."""
+    if SentenceTransformer is None:
+        log.warning("SentenceTransformer not available, cannot download model")
+        return False
+
+    try:
+        # Determine cache directory
+        if os.environ.get("XDG_CACHE_HOME"):
+            cache_root = os.environ["XDG_CACHE_HOME"]
+        elif os.environ.get("HOME"):
+            cache_root = os.path.join(os.environ["HOME"], ".cache")
+        else:
+            cache_root = os.path.join(os.getcwd(), ".cache")
+
+        cache_dir = os.path.join(cache_root, "grugthink", "sentence-transformers")
+        model_path = os.path.join(cache_dir, model_name)
+
+        if os.path.exists(model_path):
+            log.info("Model already cached", extra={"model": model_name, "path": model_path})
+            return True
+
+        log.info("Downloading model", extra={"model": model_name, "cache_dir": cache_dir})
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Download the model
+        SentenceTransformer(model_name, cache_folder=cache_dir)
+        log.info("Model downloaded successfully", extra={"model": model_name, "path": model_path})
+        return True
+
+    except Exception as e:
+        log.error("Failed to download model", extra={"model": model_name, "error": str(e)})
+        return False
+
+
 class GrugDB:
     def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global"):
         self.db_path = db_path
@@ -60,11 +95,44 @@ class GrugDB:
                         else:
                             log.warning("SentenceTransformer not available, semantic search will be disabled.")
                     else:
-                        current_dir = os.path.dirname(os.path.abspath(__file__))
-                        local_model_path = os.path.join(current_dir, "models", "sentence-transformers", self.model_name)
-                        self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
-                        self.dimension = self.embedder.get_sentence_embedding_dimension()
+                        # Try to load from cache directory first, download if needed
+                        cache_dir = self._get_model_cache_dir()
+                        local_model_path = os.path.join(cache_dir, self.model_name)
+
+                        try:
+                            # Try loading from cache first
+                            if os.path.exists(local_model_path):
+                                log.info("Loading model from cache", extra={"cache_path": local_model_path})
+                                self.embedder = SentenceTransformer(local_model_path, local_files_only=True)
+                            else:
+                                # Download to cache directory
+                                log.info(
+                                    "Downloading model to cache",
+                                    extra={"model": self.model_name, "cache_dir": cache_dir},
+                                )
+                                os.makedirs(cache_dir, exist_ok=True)
+                                self.embedder = SentenceTransformer(self.model_name, cache_folder=cache_dir)
+
+                            self.dimension = self.embedder.get_sentence_embedding_dimension()
+                        except Exception as e:
+                            log.error("Failed to load SentenceTransformer model", extra={"error": str(e)})
+                            log.warning("SentenceTransformer model loading failed, semantic search will be disabled.")
+                            return
+
                     log.info("SentenceTransformer model loaded.")
+
+    def _get_model_cache_dir(self):
+        """Get the directory where models should be cached."""
+        # Use standard cache directories based on the environment
+        if os.environ.get("XDG_CACHE_HOME"):
+            cache_root = os.environ["XDG_CACHE_HOME"]
+        elif os.environ.get("HOME"):
+            cache_root = os.path.join(os.environ["HOME"], ".cache")
+        else:
+            # Fallback to current directory/.cache for environments without HOME
+            cache_root = os.path.join(os.getcwd(), ".cache")
+
+        return os.path.join(cache_root, "grugthink", "sentence-transformers")
 
     def _init_db(self):
         """Initialize SQLite database and create facts table."""

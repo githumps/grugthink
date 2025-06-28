@@ -96,10 +96,24 @@ PYTHONPATH=. $PYTHON_CMD -m pytest -x --tb=short
 
 echo "✨ GrugThink setup complete!"
 echo ""
+echo "🤖 Optional: Download embedding models for semantic search"
+echo "   (This enables full functionality but requires more time/space)"
+read -p "   Download models now? (y/N): " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "📥 Installing full dependencies and downloading models..."
+    $PIP_CMD install sentence-transformers>=2.2.2 faiss-cpu==1.7.4
+    $PYTHON_CMD download_models.py
+    echo "🧠 Full semantic search capabilities enabled!"
+else
+    echo "⚠️  Skipping model download - semantic search will be mocked."
+fi
+echo ""
 echo "📝 Usage:"
 echo "  • Run tests: PYTHONPATH=. pytest"
 echo "  • Check code: ruff check ."
 echo "  • Format code: ruff format ."
+echo "  • Download models later: python download_models.py"
 echo ""
-echo "⚠️  Note: This is a lightweight setup using mocked ML dependencies."
-echo "   For production deployment, use the full setup.sh script."
+echo "⚠️  Note: Without models, ML features use mocked implementations."
+echo "   For full production setup, use the setup.sh script."

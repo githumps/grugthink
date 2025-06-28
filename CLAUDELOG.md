@@ -2,6 +2,66 @@
 
 This file tracks all changes made by Claude during development sessions.
 
+## Session: 2025-06-28 (Update 2) - Remove Models from Repo and Enable External Download
+
+### Problem Identified
+**Issue**: Git LFS budget exceeded due to storing the all-MiniLM-L6-v2 model (~400MB) in the repository. This prevents GitHub Actions from running.
+
+**Goal**: Remove models from repo but still make them work in both local development and Codex environments.
+
+### Changes Made ✅
+
+#### 1. Modified GrugDB for External Model Caching
+- **Updated `_ensure_embedder_loaded()`** in `grug_db.py`:
+  - Now uses standard cache directories (`~/.cache/grugthink/sentence-transformers`)
+  - Downloads models on-demand if not in cache
+  - Falls back gracefully when SentenceTransformer is not available
+- **Added `_get_model_cache_dir()`** method for consistent cache path resolution
+- **Added `download_model()`** utility function for pre-downloading models
+
+#### 2. Created Model Download Script
+- **New file**: `download_models.py` - standalone script for downloading models
+- Can be run independently: `python download_models.py`
+- Provides clear feedback on download status
+
+#### 3. Updated Setup Process
+- **Modified `setup-codex.sh`** to optionally download models:
+  - Prompts user whether to download models (y/N)
+  - If yes: installs full dependencies + downloads models  
+  - If no: continues with lightweight mocked setup
+  - Provides clear instructions for later model download
+
+#### 4. Repository Cleanup
+- **Removed** `models/` directory containing the 400MB model files
+- **Updated `.gitignore`** to exclude:
+  - `models/` directory
+  - `.cache/` directories  
+  - `*/.cache/grugthink/` user cache paths
+
+#### 5. Code Quality
+- **Fixed linting issues**: Unused variables, long lines
+- **Formatted code**: All files properly formatted with ruff
+
+### Benefits ✅
+- **Repository size**: Reduced by ~400MB, no more LFS budget issues
+- **Flexibility**: Models download on-demand, work in all environments
+- **CI/CD**: GitHub Actions will work without LFS dependencies
+- **Codex support**: Users can choose whether to download models
+- **Cache efficiency**: Standard cache locations, shared between sessions
+
+### Test Results ✅
+- **All tests pass**: 38/38 tests (100% success rate)
+- **Backward compatibility**: Existing functionality preserved  
+- **Graceful degradation**: Works with and without models available
+
+### Usage Instructions
+- **Lightweight setup**: `./setup-codex.sh` (choose "N" for models)
+- **Full setup with models**: `./setup-codex.sh` (choose "Y" for models)
+- **Download models later**: `python download_models.py`
+- **Production setup**: `./setup.sh` (includes models by default)
+
+---
+
 ## Session: 2025-06-28 (Update) - Test Fix for Invalid DB Path
 
 ### Problem Identified

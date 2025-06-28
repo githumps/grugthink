@@ -21,8 +21,14 @@ __pycache__/
 .DS_Store
 
 # Grug's brain files
-grug_lore.db
+*.db
 grug_lore.index
 *.code-workspace
 .env.prod
 *.index
+
+# Model files and cache directories
+models/
+.cache/
+# User-specific cache directories
+*/.cache/grugthink/
