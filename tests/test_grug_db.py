@@ -159,5 +159,11 @@ def test_db_close(db_instance, tmp_path):
 
 
 def test_invalid_db_path():
-    with pytest.raises(Exception):
-        GrugDB("/invalid/path/to/db.sqlite")
+    # Create a temporary file, then try to create a database path that would require
+    # creating a directory inside this file (which should fail)
+    import tempfile
+
+    with tempfile.NamedTemporaryFile() as f:
+        invalid_path = f.name + "/subdir/db.sqlite"
+        with pytest.raises(Exception):
+            GrugDB(invalid_path)

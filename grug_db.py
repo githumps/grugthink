@@ -53,6 +53,7 @@ class GrugDB:
                     log.info("Loading SentenceTransformer model...")
                     if SentenceTransformer is None:
                         import sys
+
                         if "sentence_transformers" in sys.modules:
                             self.embedder = sys.modules["sentence_transformers"].SentenceTransformer(self.model_name)
                             self.dimension = self.embedder.get_sentence_embedding_dimension()
