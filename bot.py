@@ -12,6 +12,7 @@ import signal
 import sys
 import time
 import traceback
+from collections import OrderedDict
 
 import discord
 import requests
@@ -24,8 +25,37 @@ from grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 
+class LRUCache:
+    """Memory-bounded LRU cache with automatic expiration."""
+    def __init__(self, max_size=100, ttl_seconds=300):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.cache = OrderedDict()
+
+    def get(self, key):
+        if key not in self.cache:
+            return None
+        timestamp, value = self.cache[key]
+        if time.time() - timestamp > self.ttl_seconds:
+            del self.cache[key]
+            return None
+        # Move to end (most recently used)
+        self.cache.move_to_end(key)
+        return value
+
+    def put(self, key, value):
+        now = time.time()
+        if key in self.cache:
+            self.cache[key] = (now, value)
+            self.cache.move_to_end(key)
+        else:
+            self.cache[key] = (now, value)
+            if len(self.cache) > self.max_size:
+                # Remove oldest entry
+                self.cache.popitem(last=False)
+
 # Cache and rate limiting
-response_cache = {}
+response_cache = LRUCache(max_size=100, ttl_seconds=300)
 user_cooldowns = {}
 
 # Initialize Grug's Brain
@@ -113,9 +143,6 @@ intents.message_content = True
 client = commands.Bot(command_prefix="/", intents=intents)
 tree = client.tree
 
-# Cache and rate limiting
-response_cache = {}
-user_cooldowns = {}
 session = requests.Session()
 
 
@@ -177,11 +204,10 @@ def query_model(statement: str) -> str | None:
         return "FALSE - Statement too short to verify."
 
     cache_key = get_cache_key(statement)
-    if cache_key in response_cache:
-        cache_time, cached_response = response_cache[cache_key]
-        if time.time() - cache_time < 300:
-            log.info("Using cached response", extra={"cache_key": cache_key})
-            return cached_response
+    cached_response = response_cache.get(cache_key)
+    if cached_response:
+        log.info("Using cached response", extra={"cache_key": cache_key})
+        return cached_response
 
     clean_stmt = clean_statement(statement)
     if len(clean_stmt) > 1000:
@@ -260,7 +286,7 @@ def validate_and_process_response(response: str, cache_key: str) -> str | None:
                     full_response += "."
 
                 if len(full_response.split()) >= 4 and len(full_response) >= 20:
-                    response_cache[cache_key] = (time.time(), full_response)
+                    response_cache.put(cache_key, full_response)
                     extract_lore_from_response(full_response)
                     log.info("Validated response", extra={"response": full_response[:200]})
                     return full_response

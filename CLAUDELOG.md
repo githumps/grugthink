@@ -137,3 +137,58 @@ All changes maintain the security improvements from previous fixes:
 3. **Gradual complexity**: Start with unit tests, build up to integration tests
 4. **CI optimization**: Heavy dependencies can be mocked for faster feedback
 5. **Security by default**: Maintain security posture even in test environments
+
+## Session: 2025-06-28 - Memory Cache Fix & CI Import Issues
+
+### Issue: Memory Leak in Response Cache ✅
+**Problem**: `response_cache = {}` in bot.py had unbounded growth
+**Solution**: Implemented LRUCache class with:
+- Maximum 100 entries
+- 5-minute TTL expiration
+- LRU eviction policy
+- O(1) operations using OrderedDict
+
+**Files Modified**:
+- `bot.py:28-58`: Added LRUCache class
+- `bot.py:210-213`: Updated cache.get() usage
+- `bot.py:292`: Updated cache.put() usage
+- `tests/test_bot.py:79`: Updated test to use cache.cache.clear()
+
+### Issue: CI Import Failure ✅
+**Problem**: CI couldn't import grug_db.py due to missing heavy dependencies
+**Root Cause**: Top-level imports of faiss, sentence_transformers, numpy before mocks could be applied
+**Solution**: Made all heavy dependency imports conditional with graceful fallbacks
+
+**Files Modified**:
+- `grug_db.py:12-26`: Made numpy, faiss, sentence_transformers imports conditional
+- `grug_db.py:35-55`: Updated constructor to handle mocked dependencies
+- `grug_db.py:81-130`: Updated _load_index and _create_new_index with conditional logic
+- `grug_db.py:149-151`: Added numpy check in add_fact
+- `grug_db.py:164-166`: Added dependency checks in search_facts
+- `grug_db.py:197-208`: Updated save_index with conditional FAISS usage
+- `grug_db.py:225-228`: Added dependency checks in rebuild_index
+
+**Approach**:
+```python
+# Conditional imports
+try:
+    import numpy as np
+    import faiss
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    np = None
+    faiss = None
+    SentenceTransformer = None
+
+# Graceful degradation
+if self.embedder is None or self.index is None or np is None:
+    # Skip vector operations, use database-only mode
+    return []
+```
+
+**Test Results**: All 38 tests pass, CI simulation successful without heavy dependencies
+
+### Security Fix Maintained ✅
+- Memory-bounded cache prevents DoS attacks
+- All previous security logging improvements preserved
+- No sensitive data exposure in cache or fallback modes

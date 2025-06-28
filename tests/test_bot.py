@@ -76,13 +76,13 @@ def mock_message():
 def reset_bot_state():
     # Reset rate limits and cache for each test
     bot.user_cooldowns = {}
-    bot.response_cache = {}
+    bot.response_cache.cache.clear()
 
     # Reset mocks for each test to ensure clean state
     bot.db.reset_mock()
     _mock_query_model.reset_mock()
     mock_logger.reset_mock()
-    
+
     # Set default return values after reset
     _mock_query_model.return_value = None  # Default to None unless test overrides
     yield
@@ -100,15 +100,15 @@ async def test_handle_verification_no_message(mock_interaction):
 async def test_handle_verification_success(mock_interaction, mock_message):
     mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
     _mock_bot_db.search_facts.return_value = []  # No internal knowledge
-    
+
     # Mock the executor to return our mock result directly
     async def mock_executor(executor, func, *args):
         return "TRUE - Grug say this true."
-    
+
     with patch("asyncio.get_running_loop") as mock_loop:
         mock_loop.return_value.run_in_executor = mock_executor
         await bot._handle_verification(mock_interaction)
-    
+
     mock_interaction.response.defer.assert_called_once_with(ephemeral=False)
     mock_interaction.followup.send.assert_called_once_with("Grug thinking...", ephemeral=False)
     mock_interaction.followup.send.return_value.edit.assert_called_once_with(
@@ -121,15 +121,15 @@ async def test_handle_verification_success(mock_interaction, mock_message):
 async def test_handle_verification_model_failure(mock_interaction, mock_message):
     mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
     _mock_bot_db.search_facts.return_value = []  # No internal knowledge
-    
+
     # Mock the executor to return None (failure)
     async def mock_executor(executor, func, *args):
         return None
-    
+
     with patch("asyncio.get_running_loop") as mock_loop:
         mock_loop.return_value.run_in_executor = mock_executor
         await bot._handle_verification(mock_interaction)
-    
+
     mock_interaction.response.defer.assert_called_once_with(ephemeral=False)
     mock_interaction.followup.send.assert_called_once_with("Grug thinking...", ephemeral=False)
     # Check that edit was called with one of the error messages
@@ -155,9 +155,9 @@ async def test_handle_verification_rate_limited(mock_interaction, mock_message):
 async def test_learn_trusted_user_success(mock_interaction):
     mock_interaction.user.id = 12345  # Trusted user
     bot.db.add_fact.return_value = True  # Use bot.db instead of _mock_bot_db
-    
+
     await bot.learn.callback(mock_interaction, "Grug like big rock.")
-    
+
     mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     bot.db.add_fact.assert_called_once_with("Grug like big rock.")
     mock_interaction.followup.send.assert_called_once_with("Grug learn: Grug like big rock.", ephemeral=True)
@@ -197,7 +197,7 @@ async def test_what_grug_know_no_facts(mock_interaction):
     await bot.what_grug_know.callback(mock_interaction)
     mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
 
-    # When no facts, it should send "Grug know nothing." 
+    # When no facts, it should send "Grug know nothing."
     mock_interaction.followup.send.assert_called_once_with("Grug know nothing.", ephemeral=True)
 
 

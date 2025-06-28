@@ -17,6 +17,12 @@ pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ### Development Workflow
+Always update CLAUDELOG.md at the end of each change Claude does.
+Always update CLAUDE.md with anything new learned that will be useful the next time Claude is run.
+Always ensure any new code has proper tests that pass.
+Always ensure the Github workflows are updated to reflect any changes made.
+Always ensure the project will successfully work in Docker with the Dockerfile.
+Always ensure the project will build correctly when committed to Github and the automated Github Actions run to build and check.
 
 #### Linting and Formatting
 ```bash

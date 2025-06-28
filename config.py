@@ -68,7 +68,7 @@ CAN_SEARCH = bool(GOOGLE_API_KEY and GOOGLE_CSE_ID)
 def log_initial_settings():
     """Log initial configuration settings for debugging."""
     import logging
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Configuration loaded", extra={
         "variant": GRUGBOT_VARIANT,
