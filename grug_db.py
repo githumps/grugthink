@@ -31,17 +31,19 @@ log = get_logger(__name__)
 
 
 class GrugDB:
-    def __init__(self, db_path, model_name="all-MiniLM-L6-v2"):
+    def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global"):
         self.db_path = db_path
-        self.index_path = db_path.replace(".db", ".index")
+        self.server_id = str(server_id)  # Ensure server_id is string
+        self.index_path = db_path.replace(".db", f"_{self.server_id}.index")
 
         # Handle case where SentenceTransformer is mocked or unavailable
         if SentenceTransformer is None:
             # Use mocked version from conftest.py or create a simple fallback
             import sys
-            if 'sentence_transformers' in sys.modules:
+
+            if "sentence_transformers" in sys.modules:
                 # Mocked version available
-                self.embedder = sys.modules['sentence_transformers'].SentenceTransformer(model_name)
+                self.embedder = sys.modules["sentence_transformers"].SentenceTransformer(model_name)
                 self.dimension = self.embedder.get_sentence_embedding_dimension()
             else:
                 # Fallback for testing
@@ -69,8 +71,10 @@ class GrugDB:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS facts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    content TEXT NOT NULL UNIQUE,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                    server_id TEXT DEFAULT 'global',
+                    content TEXT NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(server_id, content)
                 )
             """)
             self.conn.commit()
@@ -84,14 +88,14 @@ class GrugDB:
         if faiss is None:
             # Use mocked version from conftest.py
             import sys
-            if 'faiss' in sys.modules:
-                faiss_module = sys.modules['faiss']
+
+            if "faiss" in sys.modules:
+                faiss_module = sys.modules["faiss"]
                 if os.path.exists(self.index_path):
                     try:
                         self.index = faiss_module.read_index(self.index_path)
                         log.info(
-                            "Loaded FAISS index",
-                            extra={"index_path": self.index_path, "vectors": self.index.ntotal}
+                            "Loaded FAISS index", extra={"index_path": self.index_path, "vectors": self.index.ntotal}
                         )
                     except Exception as e:
                         log.error("Failed to load FAISS index, creating new one", extra={"error": str(e)})
@@ -120,8 +124,9 @@ class GrugDB:
         if faiss is None:
             # Use mocked version
             import sys
-            if 'faiss' in sys.modules:
-                faiss_module = sys.modules['faiss']
+
+            if "faiss" in sys.modules:
+                faiss_module = sys.modules["faiss"]
                 self.index = faiss_module.IndexIDMap(faiss_module.IndexFlatL2(self.dimension))
             else:
                 self.index = None
@@ -144,8 +149,8 @@ class GrugDB:
                 # Use a transaction so DB insert and index update succeed or fail together
                 with self.conn:
                     cursor = self.conn.execute(
-                        "INSERT INTO facts (content) VALUES (?)",
-                        (fact_text,),
+                        "INSERT INTO facts (server_id, content) VALUES (?, ?)",
+                        (self.server_id, fact_text),
                     )
                     fact_id = cursor.lastrowid
                     # Add to vector index if available
@@ -184,7 +189,7 @@ class GrugDB:
                     # FAISS indices are 0-based, SQLite IDs are 1-based
                     # This assumes a direct mapping, which is true if we only add.
                     # For a robust system, we'd use faiss.IndexIDMap
-                    cursor.execute("SELECT content FROM facts WHERE id=?", (int(i),))
+                    cursor.execute("SELECT content FROM facts WHERE id=? AND server_id=?", (int(i), self.server_id))
                     row = cursor.fetchone()
                     if row:
                         results.append(row[0])
@@ -200,7 +205,9 @@ class GrugDB:
         with self.lock:
             try:
                 cursor = self.conn.cursor()
-                cursor.execute("SELECT content FROM facts ORDER BY timestamp DESC")
+                cursor.execute(
+                    "SELECT content FROM facts WHERE server_id = ? ORDER BY timestamp DESC", (self.server_id,)
+                )
                 return [row[0] for row in cursor.fetchall()]
             except Exception as e:
                 log.error("Error getting all facts", extra={"error": str(e)})
@@ -213,8 +220,9 @@ class GrugDB:
                 if faiss is None:
                     # Use mocked version
                     import sys
-                    if 'faiss' in sys.modules:
-                        faiss_module = sys.modules['faiss']
+
+                    if "faiss" in sys.modules:
+                        faiss_module = sys.modules["faiss"]
                         faiss_module.write_index(self.index, self.index_path)
                     # If no FAISS available, just skip saving
                 else:
@@ -234,7 +242,7 @@ class GrugDB:
         with self.lock:
             self.index.reset()
             cursor = self.conn.cursor()
-            cursor.execute("SELECT id, content FROM facts ORDER BY id")
+            cursor.execute("SELECT id, content FROM facts WHERE server_id = ? ORDER BY id", (self.server_id,))
             all_facts_data = cursor.fetchall()
 
             if all_facts_data:
@@ -252,6 +260,72 @@ class GrugDB:
             with self.lock:
                 self.conn.close()
                 log.info("Database connection closed.")
+
+
+class GrugServerManager:
+    """Manages separate GrugDB instances for each Discord server."""
+
+    def __init__(self, base_db_path, model_name="all-MiniLM-L6-v2"):
+        self.base_db_path = base_db_path
+        self.model_name = model_name
+        self.server_dbs = {}
+        self.lock = threading.Lock()
+        log.info("Grug server manager initialized", extra={"base_path": base_db_path})
+
+    def get_server_db(self, server_id) -> GrugDB:
+        """Get or create a GrugDB instance for a specific server."""
+        server_id = str(server_id) if server_id else "dm"  # Handle DMs
+
+        with self.lock:
+            if server_id not in self.server_dbs:
+                log.info("Creating new Grug brain for server", extra={"server_id": server_id})
+                self.server_dbs[server_id] = GrugDB(self.base_db_path, self.model_name, server_id)
+            return self.server_dbs[server_id]
+
+    def close_all(self):
+        """Close all server database connections."""
+        with self.lock:
+            for server_id, db in self.server_dbs.items():
+                log.info("Closing Grug brain for server", extra={"server_id": server_id})
+                db.close()
+            self.server_dbs.clear()
+        log.info("All Grug brains closed")
+
+    def get_server_stats(self) -> dict:
+        """Get statistics about all server databases."""
+        stats = {}
+        with self.lock:
+            for server_id, db in self.server_dbs.items():
+                try:
+                    facts = db.get_all_facts()
+                    stats[server_id] = {"fact_count": len(facts), "index_vectors": db.index.ntotal if db.index else 0}
+                except Exception as e:
+                    stats[server_id] = {"error": str(e)}
+        return stats
+
+    def migrate_global_facts_to_server(self, target_server_id: str = "global"):
+        """Migrate facts without server_id to a specific server."""
+        with self.lock:
+            try:
+                # Find facts without server_id (old format)
+                cursor = sqlite3.connect(self.base_db_path).cursor()
+                cursor.execute("SELECT id, content FROM facts WHERE server_id IS NULL OR server_id = ''")
+                old_facts = cursor.fetchall()
+
+                if old_facts:
+                    log.info(f"Migrating {len(old_facts)} global facts to server {target_server_id}")
+                    # Update them to belong to the target server
+                    cursor.execute(
+                        "UPDATE facts SET server_id = ? WHERE server_id IS NULL OR server_id = ''", (target_server_id,)
+                    )
+                    cursor.connection.commit()
+                    log.info("Migration completed successfully")
+                else:
+                    log.info("No global facts found to migrate")
+
+                cursor.connection.close()
+            except Exception as e:
+                log.error("Error migrating global facts", extra={"error": str(e)})
 
 
 if __name__ == "__main__":

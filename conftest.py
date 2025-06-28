@@ -1,6 +1,7 @@
 """
 Global pytest configuration and fixtures for CI optimization.
 """
+
 import importlib.util
 import os
 import sys
@@ -33,6 +34,7 @@ def mock_heavy_dependencies():
 
             def search(self, queries, k):
                 import numpy as np
+
                 batch_size = len(queries)
                 dists = np.zeros((batch_size, k), dtype=np.float32)
                 idx = np.full((batch_size, k), -1, dtype=np.int64)
@@ -79,6 +81,7 @@ def mock_heavy_dependencies():
                 import hashlib
 
                 import numpy as np
+
                 if isinstance(texts, str):
                     texts = [texts]
                 # Create deterministic embeddings with keyword-based similarity
@@ -96,10 +99,21 @@ def mock_heavy_dependencies():
 
                     # Add some keyword-specific features for better matching
                     keyword_map = {
-                        'hunt': 10, 'mammoth': 11, 'grug': 12,
-                        'fire': 20, 'make': 21, 'ugga': 22, 'good': 23,
-                        'find': 30, 'stone': 31, 'bork': 32, 'shiny': 33,
-                        'sky': 40, 'blue': 41, 'think': 42, 'color': 40  # color->sky mapping
+                        "hunt": 10,
+                        "mammoth": 11,
+                        "grug": 12,
+                        "fire": 20,
+                        "make": 21,
+                        "ugga": 22,
+                        "good": 23,
+                        "find": 30,
+                        "stone": 31,
+                        "bork": 32,
+                        "shiny": 33,
+                        "sky": 40,
+                        "blue": 41,
+                        "think": 42,
+                        "color": 40,  # color->sky mapping
                     }
 
                     for word in words:

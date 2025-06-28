@@ -25,8 +25,10 @@ mock_config.OLLAMA_MODELS = []
 mock_config.DB_PATH = "test_grug_lore.db"
 mock_config.LOG_LEVEL_STR = "INFO"  # Corrected: Use LOG_LEVEL_STR
 
-# Global mocks for bot.db and bot.query_model
+# Global mocks for bot.server_manager and bot.query_model
 _mock_bot_db = MagicMock()
+_mock_server_manager = MagicMock()
+_mock_server_manager.get_server_db.return_value = _mock_bot_db
 _mock_query_model = MagicMock()  # Synchronous mock since it's called in executor
 
 # Mock the logger
@@ -40,7 +42,7 @@ with (
             "grug_db": MagicMock(),  # Mock the entire grug_db module
         },
     ),
-    patch("bot.db", _mock_bot_db),
+    patch("bot.server_manager", _mock_server_manager),
     patch("bot.query_model", _mock_query_model),
     patch("grug_structured_logger.get_logger", return_value=mock_logger),
 ):
@@ -57,6 +59,10 @@ def mock_interaction():
     interaction.channel = AsyncMock(spec=discord.TextChannel)
     interaction.response = AsyncMock()
     interaction.followup = AsyncMock()
+    interaction.guild_id = 12345  # Add guild_id for server identification
+    interaction.guild = MagicMock(spec=discord.Guild)
+    interaction.guild.name = "Test Guild"
+    interaction.guild.id = 12345
     # Add a mock message attribute to the interaction
     interaction.message = AsyncMock(spec=discord.Message)
     interaction.message.content = "Initial message content"
@@ -79,7 +85,9 @@ def reset_bot_state():
     bot.response_cache.cache.clear()
 
     # Reset mocks for each test to ensure clean state
-    bot.db.reset_mock()
+    _mock_bot_db.reset_mock()
+    _mock_server_manager.reset_mock()
+    _mock_server_manager.get_server_db.return_value = _mock_bot_db  # Re-establish connection after reset
     _mock_query_model.reset_mock()
     mock_logger.reset_mock()
 
@@ -154,14 +162,19 @@ async def test_handle_verification_rate_limited(mock_interaction, mock_message):
 @pytest.mark.asyncio
 async def test_learn_trusted_user_success(mock_interaction):
     mock_interaction.user.id = 12345  # Trusted user
-    bot.db.add_fact.return_value = True  # Use bot.db instead of _mock_bot_db
 
-    await bot.learn.callback(mock_interaction, "Grug like big rock.")
+    # Mock the get_server_db function directly to return our mock database
+    server_db_mock = MagicMock()
+    server_db_mock.add_fact.return_value = True
 
-    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-    bot.db.add_fact.assert_called_once_with("Grug like big rock.")
-    mock_interaction.followup.send.assert_called_once_with("Grug learn: Grug like big rock.", ephemeral=True)
-    # Logging verification omitted - focus on Discord interactions
+    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
+        await bot.learn.callback(mock_interaction, "Grug like big rock.")
+
+        mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+        mock_get_db.assert_called_once_with(mock_interaction)
+        server_db_mock.add_fact.assert_called_once_with("Grug like big rock.")
+        mock_interaction.followup.send.assert_called_once_with("Grug learn: Grug like big rock.", ephemeral=True)
+        # Logging verification omitted - focus on Discord interactions
 
 
 @pytest.mark.asyncio
@@ -183,39 +196,56 @@ async def test_learn_fact_too_short(mock_interaction):
 @pytest.mark.asyncio
 async def test_learn_duplicate_fact(mock_interaction):
     mock_interaction.user.id = 12345  # Trusted user
-    bot.db.add_fact.return_value = False  # Simulate duplicate
-    await bot.learn.callback(mock_interaction, "Grug like big rock.")
-    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-    bot.db.add_fact.assert_called_once_with("Grug like big rock.")
-    mock_interaction.followup.send.assert_called_once_with("Grug already know that.", ephemeral=True)
+
+    # Mock the get_server_db function directly to return our mock database
+    server_db_mock = MagicMock()
+    server_db_mock.add_fact.return_value = False  # Simulate duplicate
+
+    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
+        await bot.learn.callback(mock_interaction, "Grug like big rock.")
+        mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+        mock_get_db.assert_called_once_with(mock_interaction)
+        server_db_mock.add_fact.assert_called_once_with("Grug like big rock.")
+        mock_interaction.followup.send.assert_called_once_with("Grug already know that.", ephemeral=True)
 
 
 # Test cases for what-grug-know command
 @pytest.mark.asyncio
 async def test_what_grug_know_no_facts(mock_interaction):
-    bot.db.get_all_facts.return_value = []
-    await bot.what_grug_know.callback(mock_interaction)
-    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+    # Mock the get_server_db function directly to return our mock database
+    server_db_mock = MagicMock()
+    server_db_mock.get_all_facts.return_value = []
 
-    # When no facts, it should send "Grug know nothing."
-    mock_interaction.followup.send.assert_called_once_with("Grug know nothing.", ephemeral=True)
+    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
+        await bot.what_grug_know.callback(mock_interaction)
+        mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+        mock_get_db.assert_called_once_with(mock_interaction)
+
+        # When no facts, it should send "Grug know nothing in this cave."
+        mock_interaction.followup.send.assert_called_once_with("Grug know nothing in this cave.", ephemeral=True)
 
 
 @pytest.mark.asyncio
 async def test_what_grug_know_with_facts(mock_interaction):
     facts = ["Grug hunt mammoth.", "Ugga make good fire."]
-    bot.db.get_all_facts.return_value = facts
-    await bot.what_grug_know.callback(mock_interaction)
-    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
 
-    # Check embed content
-    args, kwargs = mock_interaction.followup.send.call_args
-    embed = kwargs["embed"]
-    assert embed.title == "Grug's Memories"
-    assert embed.description == f"Grug knows {len(facts)} things:"
-    assert embed.fields[0].name == "Facts"
-    assert embed.fields[0].value == "1. Grug hunt mammoth.\n2. Ugga make good fire."
-    assert kwargs["ephemeral"] is True
+    # Mock the get_server_db function directly to return our mock database
+    server_db_mock = MagicMock()
+    server_db_mock.get_all_facts.return_value = facts
+
+    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
+        await bot.what_grug_know.callback(mock_interaction)
+        mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+        mock_get_db.assert_called_once_with(mock_interaction)
+
+        # Check embed content
+        args, kwargs = mock_interaction.followup.send.call_args
+        embed = kwargs["embed"]
+        assert embed.title == "Grug's Memories (Test Guild)"  # Include server name
+        assert embed.description == f"Grug knows {len(facts)} things in this cave:"
+        assert embed.fields[0].name == "Facts"
+        assert embed.fields[0].value == "1. Grug hunt mammoth.\n2. Ugga make good fire."
+        assert kwargs["ephemeral"] is True
 
 
 # Test cases for grug-help command

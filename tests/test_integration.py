@@ -2,13 +2,14 @@
 Integration tests for GrugThink bot with proper Discord API mocking.
 These tests focus on end-to-end functionality without heavy dependencies.
 """
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
 # Import after setting up mocks
-from tests.test_bot import _mock_bot_db, mock_config, mock_logger
+from tests.test_bot import mock_config, mock_logger
 
 
 class TestDiscordIntegration:
@@ -63,62 +64,64 @@ class TestDiscordIntegration:
     @pytest.mark.asyncio
     async def test_verify_command_integration(self, mock_interaction, mock_message):
         """Test the verify command end-to-end."""
-        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), \
-             patch("bot.db", _mock_bot_db), \
-             patch("bot.log", mock_logger), \
-             patch("asyncio.get_running_loop") as mock_loop:
-
+        with (
+            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
+            patch("bot.log", mock_logger),
+            patch("asyncio.get_running_loop") as mock_loop,
+        ):
             # Mock the executor
             async def mock_executor(executor, func, *args):
                 return "TRUE - Grug say sky blue sometimes."
+
             mock_loop.return_value.run_in_executor = mock_executor
 
             import bot
 
             # Setup mock responses
             mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
-            _mock_bot_db.search_facts.return_value = []
+            server_db_mock = MagicMock()
+            server_db_mock.search_facts.return_value = []
 
-            # Execute the command
-            await bot._handle_verification(mock_interaction)
+            with patch.object(bot, "get_server_db", return_value=server_db_mock):
+                # Execute the command
+                await bot._handle_verification(mock_interaction)
 
-            # Verify interaction flow
-            mock_interaction.response.defer.assert_called_once_with(ephemeral=False)
-            mock_interaction.followup.send.assert_called_once_with("Grug thinking...", ephemeral=False)
+                # Verify interaction flow
+                mock_interaction.response.defer.assert_called_once_with(ephemeral=False)
+                mock_interaction.followup.send.assert_called_once_with("Grug thinking...", ephemeral=False)
 
-            # Logging verification omitted - focus on Discord interactions
+                # Logging verification omitted - focus on Discord interactions
 
     @pytest.mark.asyncio
     async def test_learn_command_integration(self, mock_interaction):
         """Test the learn command end-to-end."""
-        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), \
-             patch("bot.db", _mock_bot_db), \
-             patch("bot.log", mock_logger):
-
+        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), patch("bot.log", mock_logger):
             import bot
 
             # Setup mock responses
-            _mock_bot_db.add_fact.return_value = True
+            server_db_mock = MagicMock()
+            server_db_mock.add_fact.return_value = True
 
-            # Execute the command
-            await bot.learn.callback(mock_interaction, "Grug love mammoth meat.")
+            with patch.object(bot, "get_server_db", return_value=server_db_mock):
+                # Execute the command
+                await bot.learn.callback(mock_interaction, "Grug love mammoth meat.")
 
-            # Verify interaction flow
-            mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-            _mock_bot_db.add_fact.assert_called_once_with("Grug love mammoth meat.")
-            mock_interaction.followup.send.assert_called_once_with(
-                "Grug learn: Grug love mammoth meat.", ephemeral=True
-            )
+                # Verify interaction flow
+                mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+                server_db_mock.add_fact.assert_called_once_with("Grug love mammoth meat.")
+                mock_interaction.followup.send.assert_called_once_with(
+                    "Grug learn: Grug love mammoth meat.", ephemeral=True
+                )
 
-            # Logging verification omitted - focus on Discord interactions
+                # Logging verification omitted - focus on Discord interactions
 
     @pytest.mark.asyncio
     async def test_rate_limiting_integration(self, mock_interaction, mock_message):
         """Test rate limiting functionality."""
-        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), \
-             patch("bot.db", _mock_bot_db), \
-             patch("grug_structured_logger.get_logger", return_value=mock_logger):
-
+        with (
+            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
+            patch("grug_structured_logger.get_logger", return_value=mock_logger),
+        ):
             import time
 
             import bot
@@ -137,10 +140,10 @@ class TestDiscordIntegration:
     @pytest.mark.asyncio
     async def test_untrusted_user_learn_integration(self, mock_interaction):
         """Test learn command with untrusted user."""
-        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), \
-             patch("bot.db", _mock_bot_db), \
-             patch("grug_structured_logger.get_logger", return_value=mock_logger):
-
+        with (
+            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
+            patch("grug_structured_logger.get_logger", return_value=mock_logger),
+        ):
             import bot
 
             # Make user untrusted
@@ -151,9 +154,7 @@ class TestDiscordIntegration:
 
             # Verify rejection
             mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-            mock_interaction.followup.send.assert_called_once_with(
-                "You not trusted to teach Grug.", ephemeral=True
-            )
+            mock_interaction.followup.send.assert_called_once_with("You not trusted to teach Grug.", ephemeral=True)
 
 
 class TestDatabaseIntegration:
@@ -217,6 +218,7 @@ class TestConfigurationIntegration:
 
         # Reload config module
         import sys
+
         if "config" in sys.modules:
             del sys.modules["config"]
 

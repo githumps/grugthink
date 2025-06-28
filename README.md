@@ -26,6 +26,24 @@ For how to wake Grug up, see `DEPLOYMENT.md`.
 
 ## Getting Started
 
+### Quick Setup (Recommended)
+
+For **ChatGPT/Codex users** or **fast development**:
+```bash
+chmod +x setup-codex.sh
+./setup-codex.sh
+```
+
+For **production** or **full ML capabilities**:
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+**See [SETUP_COMPARISON.md](SETUP_COMPARISON.md) for detailed comparison.**
+
+### Manual Setup
+
 1.  **Make Magic Air (Virtual Environment):**
     ```bash
     python3.11 -m venv venv

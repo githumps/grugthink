@@ -70,10 +70,13 @@ def log_initial_settings():
     import logging
 
     logger = logging.getLogger(__name__)
-    logger.info("Configuration loaded", extra={
-        "variant": GRUGBOT_VARIANT,
-        "use_gemini": USE_GEMINI,
-        "can_search": CAN_SEARCH,
-        "trusted_users_count": len(TRUSTED_USER_IDS),
-        "log_level": LOG_LEVEL_STR
-    })
+    logger.info(
+        "Configuration loaded",
+        extra={
+            "variant": GRUGBOT_VARIANT,
+            "use_gemini": USE_GEMINI,
+            "can_search": CAN_SEARCH,
+            "trusted_users_count": len(TRUSTED_USER_IDS),
+            "log_level": LOG_LEVEL_STR,
+        },
+    )

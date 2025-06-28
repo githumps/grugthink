@@ -81,7 +81,8 @@ from grug_db import GrugDB
 def db_instance():
     # Setup: Create a temporary database for testing
     test_db_path = "test_grug_lore.db"
-    test_index_path = "test_grug_lore.index"
+    test_server_id = "test_server"
+    test_index_path = test_db_path.replace(".db", f"_{test_server_id}.index")
 
     # Clean up any previous test artifacts
     if os.path.exists(test_db_path):
@@ -89,7 +90,7 @@ def db_instance():
     if os.path.exists(test_index_path):
         os.remove(test_index_path)
 
-    db = GrugDB(test_db_path)
+    db = GrugDB(test_db_path, server_id=test_server_id)
     yield db
 
     # Teardown: Close the database and remove the test files

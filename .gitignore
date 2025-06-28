@@ -25,3 +25,4 @@ grug_lore.db
 grug_lore.index
 *.code-workspace
 .env.prod
+*.index

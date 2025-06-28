@@ -20,13 +20,15 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
-from grug_db import GrugDB
+from grug_db import GrugServerManager
 from grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 
+
 class LRUCache:
     """Memory-bounded LRU cache with automatic expiration."""
+
     def __init__(self, max_size=100, ttl_seconds=300):
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
@@ -54,12 +56,28 @@ class LRUCache:
                 # Remove oldest entry
                 self.cache.popitem(last=False)
 
+
 # Cache and rate limiting
 response_cache = LRUCache(max_size=100, ttl_seconds=300)
 user_cooldowns = {}
 
-# Initialize Grug's Brain
-db = GrugDB(config.DB_PATH)
+# Initialize Grug's Server Manager
+server_manager = GrugServerManager(config.DB_PATH)
+
+
+def get_server_db(interaction_or_guild_id):
+    """Get the appropriate database for a Discord interaction or guild ID."""
+    if hasattr(interaction_or_guild_id, "guild_id"):
+        # It's a Discord interaction
+        guild_id = interaction_or_guild_id.guild_id
+    elif hasattr(interaction_or_guild_id, "guild") and interaction_or_guild_id.guild:
+        # It's a Discord message with guild
+        guild_id = interaction_or_guild_id.guild.id
+    else:
+        # It's a guild ID directly, or a DM
+        guild_id = interaction_or_guild_id
+
+    return server_manager.get_server_db(guild_id)
 
 
 def log_initial_settings():
@@ -87,15 +105,15 @@ def log_initial_settings():
 log_initial_settings()
 
 
-def build_grug_context(statement: str) -> str:
-    """Build Grug context with semantically relevant lore."""
+def build_grug_context(statement: str, server_db) -> str:
+    """Build Grug context with semantically relevant lore for this server."""
     base_context = """You are Grug, the caveman truth verifier. You live in a big cave near the river with Og.
 Your wife is named Ugga and you have two children, Grog and Bork.
 You hunt mammoth, make fire, and know ancient wisdom. You speak in short caveman sentences.
 You are honest about real world facts but have your own caveman personality and history."""
 
-    # Find lore relevant to the current statement
-    relevant_lore = db.search_facts(statement, k=5)
+    # Find lore relevant to the current statement from this server's knowledge
+    relevant_lore = server_db.search_facts(statement, k=5)
 
     if relevant_lore:
         lore_context = f"\n\nGrug also remember these things: {' '.join(relevant_lore)}"
@@ -104,9 +122,9 @@ You are honest about real world facts but have your own caveman personality and 
     return base_context
 
 
-def build_grug_prompt(statement: str, external_info: str = "") -> str:
+def build_grug_prompt(statement: str, server_db, external_info: str = "") -> str:
     """Build complete Grug verification prompt with lore and external info."""
-    grug_context = build_grug_context(statement)
+    grug_context = build_grug_context(statement, server_db)
 
     if external_info:
         grug_context += f"\n\nGrug find this on magic talking rock (internet): {external_info}"
@@ -166,14 +184,14 @@ def is_rate_limited(user_id: int) -> bool:
     return False
 
 
-def extract_lore_from_response(response: str):
+def extract_lore_from_response(response: str, server_db):
     """Extract and save new lore to Grug's brain."""
     try:
         lore_sentences = re.findall(r"[^.!?]*\bGrug\b[^.!?]*[.!?]", response, re.IGNORECASE)
         for sentence in lore_sentences:
             sentence_clean = sentence.strip().capitalize()
             if sentence_clean and len(sentence_clean) > 15 and not sentence_clean.startswith(("TRUE", "FALSE")):
-                if db.add_fact(sentence_clean):
+                if server_db.add_fact(sentence_clean):
                     log.info("New lore learned", extra={"lore": sentence_clean})
                 else:
                     log.info("Lore already known", extra={"lore": sentence_clean})
@@ -198,7 +216,7 @@ def search_google(query: str) -> str:
     return ""
 
 
-def query_model(statement: str) -> str | None:
+def query_model(statement: str, server_db) -> str | None:
     """Unified query function for both Ollama and Gemini."""
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
@@ -213,22 +231,22 @@ def query_model(statement: str) -> str | None:
     if len(clean_stmt) > 1000:
         clean_stmt = clean_stmt[:1000]
 
-    # Check internal knowledge first
-    relevant_lore = db.search_facts(clean_stmt, k=1)
+    # Check internal knowledge first from this server's database
+    relevant_lore = server_db.search_facts(clean_stmt, k=1)
     external_info = ""
     if not relevant_lore:  # If no strong internal signal, search web
         log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
         external_info = search_google(clean_stmt)
 
-    prompt_text = build_grug_prompt(clean_stmt, external_info)
+    prompt_text = build_grug_prompt(clean_stmt, server_db, external_info)
 
     if config.USE_GEMINI:
-        return query_gemini_api(prompt_text, cache_key)
+        return query_gemini_api(prompt_text, cache_key, server_db)
     else:
-        return query_ollama_api(prompt_text, cache_key)
+        return query_ollama_api(prompt_text, cache_key, server_db)
 
 
-def query_ollama_api(prompt_text: str, cache_key: str) -> str | None:
+def query_ollama_api(prompt_text: str, cache_key: str, server_db=None) -> str | None:
     log.info("Querying Ollama with integrated prompt")
     for idx, url in enumerate(config.OLLAMA_URLS):
         raw_model = config.OLLAMA_MODELS[idx] if idx < len(config.OLLAMA_MODELS) else config.OLLAMA_MODELS[0]
@@ -242,7 +260,7 @@ def query_ollama_api(prompt_text: str, cache_key: str) -> str | None:
             r = session.post(f"{url}/api/generate", json=payload, timeout=60)
             if r.status_code == 200:
                 response = r.json().get("response", "").strip()
-                validated = validate_and_process_response(response, cache_key)
+                validated = validate_and_process_response(response, cache_key, server_db)
                 if validated:
                     return validated
         except requests.exceptions.RequestException as e:
@@ -250,7 +268,7 @@ def query_ollama_api(prompt_text: str, cache_key: str) -> str | None:
     return None
 
 
-def query_gemini_api(prompt_text: str, cache_key: str) -> str | None:
+def query_gemini_api(prompt_text: str, cache_key: str, server_db=None) -> str | None:
     log.info("Querying Gemini with integrated prompt")
     try:
         import google.generativeai as genai
@@ -258,7 +276,7 @@ def query_gemini_api(prompt_text: str, cache_key: str) -> str | None:
         genai.configure(api_key=config.GEMINI_API_KEY)
         model = genai.GenerativeModel(model_name=config.GEMINI_MODEL)
         resp = model.generate_content(prompt_text, stream=False, generation_config={"temperature": 0.3, "top_p": 0.5})
-        validated = validate_and_process_response(resp.text, cache_key)
+        validated = validate_and_process_response(resp.text, cache_key, server_db)
         if validated:
             return validated
     except Exception as e:
@@ -266,7 +284,7 @@ def query_gemini_api(prompt_text: str, cache_key: str) -> str | None:
     return None
 
 
-def validate_and_process_response(response: str, cache_key: str) -> str | None:
+def validate_and_process_response(response: str, cache_key: str, server_db=None) -> str | None:
     """Centralized response validation and processing."""
     response = response.split("<END>")[0].strip()
     log.info("Raw response from model", extra={"response": response[:200]})
@@ -287,7 +305,8 @@ def validate_and_process_response(response: str, cache_key: str) -> str | None:
 
                 if len(full_response.split()) >= 4 and len(full_response) >= 20:
                     response_cache.put(cache_key, full_response)
-                    extract_lore_from_response(full_response)
+                    if server_db:
+                        extract_lore_from_response(full_response, server_db)
                     log.info("Validated response", extra={"response": full_response[:200]})
                     return full_response
     log.warning("Invalid format, discarding", extra={"response": response[:200]})
@@ -330,8 +349,10 @@ async def _handle_verification(interaction: discord.Interaction):
     msg = await interaction.followup.send("Grug thinking...", ephemeral=False)
 
     try:
+        # Get the server-specific database
+        server_db = get_server_db(interaction)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, query_model, target)
+        result = await loop.run_in_executor(None, query_model, target, server_db)
 
         if result:
             await msg.edit(content=f"Verification: {result}")
@@ -370,8 +391,17 @@ async def learn(interaction: discord.Interaction, fact: str):
         await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
         return
 
-    if db.add_fact(fact):
-        log.info("Fact learned", extra={"user_id": str(interaction.user.id), "fact_length": len(fact)})
+    # Get the server-specific database
+    server_db = get_server_db(interaction)
+    if server_db.add_fact(fact):
+        log.info(
+            "Fact learned",
+            extra={
+                "user_id": str(interaction.user.id),
+                "fact_length": len(fact),
+                "server_id": str(interaction.guild_id),
+            },
+        )
         await interaction.followup.send(f"Grug learn: {fact}", ephemeral=True)
     else:
         await interaction.followup.send("Grug already know that.", ephemeral=True)
@@ -380,17 +410,22 @@ async def learn(interaction: discord.Interaction, fact: str):
 @tree.command(name="what-grug-know", description="See all the facts Grug knows.")
 async def what_grug_know(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)  # Tell Discord Grug is thinking
-    all_facts = db.get_all_facts()
+    # Get the server-specific database
+    server_db = get_server_db(interaction)
+    all_facts = server_db.get_all_facts()
     if not all_facts:
-        await interaction.followup.send("Grug know nothing.", ephemeral=True)
+        await interaction.followup.send("Grug know nothing in this cave.", ephemeral=True)
         return
 
     # Format facts into a numbered list
     fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
 
     # Create a Discord embed for better formatting
+    server_name = interaction.guild.name if interaction.guild else "DM"
     embed = discord.Embed(
-        title="Grug's Memories", description=f"Grug knows {len(all_facts)} things:", color=discord.Color.blue()
+        title=f"Grug's Memories ({server_name})",
+        description=f"Grug knows {len(all_facts)} things in this cave:",
+        color=discord.Color.blue(),
     )
     embed.add_field(name="Facts", value=fact_list[:1024], inline=False)  # Embed field value limit is 1024
 
@@ -416,7 +451,7 @@ def main():
     # Signal handler for graceful shutdown
     def signal_handler(signum, frame):
         log.info("Received signal, shutting down gracefully", extra={"signal": signum})
-        db.close()
+        server_manager.close_all()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -437,8 +472,8 @@ def main():
         )
         sys.exit(1)
     finally:
-        db.close()  # Ensure DB connection is closed gracefully if not already by signal
-        log.info("Grug has left the cave.")
+        server_manager.close_all()  # Ensure all DB connections are closed gracefully if not already by signal
+        log.info("Grug has left all caves.")
         sys.exit(0)
 
 
