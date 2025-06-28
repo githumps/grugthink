@@ -1,7 +1,7 @@
 discord.py
 python-dotenv
 requests
-numpy
+numpy<2
 faiss-cpu==1.7.4
 sentence-transformers
 google-generativeai
