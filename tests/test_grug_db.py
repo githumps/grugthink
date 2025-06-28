@@ -84,7 +84,7 @@ def db_instance(tmp_path):
     test_db_path = str(test_db_dir / "test_grug_lore.db")
     test_server_id = "test_server"
 
-    db = GrugDB(test_db_path, server_id=test_server_id, load_embedder=True)
+    db = GrugDB(test_db_path, server_id=test_server_id)
     yield db
 
     # Teardown: Close the database and remove the test files
@@ -153,7 +153,7 @@ def test_db_close(db_instance, tmp_path):
     # when called explicitly (though it's usually called once in teardown)
     db_instance.close()
     # Re-initializing to ensure it can be opened again after close
-    new_db = GrugDB(str(tmp_path / "test_grug_lore_new.db"), load_embedder=True)
+    new_db = GrugDB(str(tmp_path / "test_grug_lore_new.db"))
     assert new_db is not None
     new_db.close()
 

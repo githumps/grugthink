@@ -174,7 +174,7 @@ class TestDatabaseIntegration:
 
         try:
             # Initialize database (uses mocked FAISS and sentence-transformers)
-            db = GrugDB(db_path, load_embedder=True)
+            db = GrugDB(db_path)
 
             # Add some facts
             assert db.add_fact("Grug hunt mammoth in winter.")
