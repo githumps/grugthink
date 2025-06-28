@@ -114,8 +114,23 @@ async def test_handle_verification_success(mock_interaction, mock_message):
     async def mock_executor(executor, func, *args):
         return "TRUE - Grug say this true."
 
-    with patch("asyncio.get_running_loop") as mock_loop:
+    # Mock personality engine to control response styling
+    with (
+        patch("asyncio.get_running_loop") as mock_loop,
+        patch.object(bot, "personality_engine") as mock_personality_engine,
+    ):
         mock_loop.return_value.run_in_executor = mock_executor
+
+        # Mock personality for consistent testing
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        # Mock response styling to return unmodified response
+        mock_personality_engine.get_response_with_style.return_value = "TRUE - Grug say this true."
+
         await bot._handle_verification(mock_interaction)
 
     mock_interaction.response.defer.assert_called_once_with(ephemeral=False)
@@ -212,13 +227,24 @@ async def test_learn_duplicate_fact(mock_interaction):
 
 # Test cases for what-grug-know command
 @pytest.mark.asyncio
-async def test_what_grug_know_no_facts(mock_interaction):
+async def test_what_know_no_facts(mock_interaction):
     # Mock the get_server_db function directly to return our mock database
     server_db_mock = MagicMock()
     server_db_mock.get_all_facts.return_value = []
 
-    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
-        await bot.what_grug_know.callback(mock_interaction)
+    # Mock personality engine
+    with (
+        patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db,
+        patch.object(bot, "personality_engine") as mock_personality_engine,
+    ):
+        # Mock personality for caveman style
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        await bot.what_know.callback(mock_interaction)
         mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
         mock_get_db.assert_called_once_with(mock_interaction)
 
@@ -227,15 +253,26 @@ async def test_what_grug_know_no_facts(mock_interaction):
 
 
 @pytest.mark.asyncio
-async def test_what_grug_know_with_facts(mock_interaction):
+async def test_what_know_with_facts(mock_interaction):
     facts = ["Grug hunt mammoth.", "Ugga make good fire."]
 
     # Mock the get_server_db function directly to return our mock database
     server_db_mock = MagicMock()
     server_db_mock.get_all_facts.return_value = facts
 
-    with patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db:
-        await bot.what_grug_know.callback(mock_interaction)
+    # Mock personality engine
+    with (
+        patch.object(bot, "get_server_db", return_value=server_db_mock) as mock_get_db,
+        patch.object(bot, "personality_engine") as mock_personality_engine,
+    ):
+        # Mock personality for caveman style
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        await bot.what_know.callback(mock_interaction)
         mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
         mock_get_db.assert_called_once_with(mock_interaction)
 
@@ -249,20 +286,29 @@ async def test_what_grug_know_with_facts(mock_interaction):
         assert kwargs["ephemeral"] is True
 
 
-# Test cases for grug-help command
+# Test cases for help command
 @pytest.mark.asyncio
-async def test_grug_help(mock_interaction):
-    await bot.grug_help.callback(mock_interaction)
-    mock_interaction.response.send_message.assert_called_once()
-    args, kwargs = mock_interaction.response.send_message.call_args
-    embed = kwargs["embed"]
-    assert embed.title == "Grug Help"
-    assert "Here are the things Grug can do:" in embed.description
-    assert any(f.name == "/verify" for f in embed.fields)
-    assert any(f.name == "/learn" for f in embed.fields)
-    assert any(f.name == "/what-grug-know" for f in embed.fields)
-    assert any(f.name == "/grug-help" for f in embed.fields)
-    assert kwargs["ephemeral"] is True
+async def test_help_command(mock_interaction):
+    # Mock personality engine
+    with patch.object(bot, "personality_engine") as mock_personality_engine:
+        # Mock personality for caveman style
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        await bot.help_command.callback(mock_interaction)
+        mock_interaction.response.send_message.assert_called_once()
+        args, kwargs = mock_interaction.response.send_message.call_args
+        embed = kwargs["embed"]
+        assert embed.title == "Grug Help"
+        assert "Here are the things Grug can do:" in embed.description
+        assert any(f.name == "/verify" for f in embed.fields)
+        assert any(f.name == "/learn" for f in embed.fields)
+        assert any(f.name == "/what-know" for f in embed.fields)
+        assert any(f.name == "/help" for f in embed.fields)
+        assert kwargs["ephemeral"] is True
 
 
 # Test clean_statement
