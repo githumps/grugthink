@@ -191,12 +191,20 @@ if self.embedder is None or self.index is None or np is None:
 ### Issue: Non-deterministic Test Failure ✅
 **Problem**: `test_search_facts` failing in CI due to random embeddings in mock
 **Root Cause**: `SentenceTransformer.encode()` mock used `np.random.random()`, causing unpredictable search results
-**Solution**: Created deterministic word-based embedding mock with semantic similarity
+**Solution**: Created deterministic keyword-based embedding mock with semantic similarity
 
 **Files Modified**:
-- `conftest.py:78-100`: Replaced random embeddings with deterministic word-hash embeddings
-- **Approach**: Use word hashes as features, positional weighting, normalized vectors
-- **Result**: Semantic queries like "what grug hunt?" correctly match "Grug hunt mammoth."
+- `conftest.py:78-114`: Replaced random embeddings with deterministic keyword-based embeddings
+- **Approach**: 
+  - Use MD5 hashing for platform-independent deterministic results
+  - Keyword mapping for semantic similarity (e.g., "color" -> "sky")
+  - Weighted embedding features for important keywords
+  - Normalized vectors for cosine similarity
+- **Result**: All semantic queries work correctly:
+  - "what grug hunt?" → "Grug hunt mammoth." ✅
+  - "who make fire?" → "Ugga make good fire." ✅  
+  - "what bork find?" → "Bork find shiny stone." ✅
+  - "color of sky?" → "Grug think sky is blue." ✅
 
 ### Security Fix Maintained ✅
 - Memory-bounded cache prevents DoS attacks
