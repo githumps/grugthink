@@ -1,21 +1,10 @@
 import os
 import re
 
-# Check if we're in a testing environment
-_IS_TESTING = (
-    "pytest" in os.getenv("_", "")
-    or "pytest" in os.getenv("PYTEST_CURRENT_TEST", "")
-    or os.getenv("TESTING", "").lower() == "true"
-    or "test" in os.path.basename(os.getenv("PYTHONPATH", ""))
-)
-
 # --- Discord Configuration ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-if not DISCORD_TOKEN and not _IS_TESTING:
+if not DISCORD_TOKEN:
     raise ValueError("Missing DISCORD_TOKEN")
-elif not DISCORD_TOKEN and _IS_TESTING:
-    # Provide default test value
-    DISCORD_TOKEN = "fake_test_token"
 
 # --- LLM Configuration ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -73,12 +62,8 @@ if GOOGLE_CSE_ID and not re.match(r"^[\w\-]+$", GOOGLE_CSE_ID):
     raise ValueError("Invalid GOOGLE_CSE_ID")
 
 USE_GEMINI = bool(GEMINI_API_KEY)
-if not USE_GEMINI and not OLLAMA_URLS and not _IS_TESTING:
+if not USE_GEMINI and not OLLAMA_URLS:
     raise ValueError("Missing LLM configuration")
-elif not USE_GEMINI and not OLLAMA_URLS and _IS_TESTING:
-    # Provide default test values
-    GEMINI_API_KEY = "fake_test_gemini_key"
-    USE_GEMINI = True
 
 CAN_SEARCH = bool(GOOGLE_API_KEY and GOOGLE_CSE_ID)
 

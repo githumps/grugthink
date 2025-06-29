@@ -64,9 +64,23 @@ class TestDiscordIntegration:
     @pytest.mark.asyncio
     async def test_verify_command_integration(self, mock_interaction, mock_message):
         """Test the verify command end-to-end."""
+        # Ensure guild_id is set
+        mock_interaction.guild_id = 12345
+
+        # Create a mock personality object
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+
+        # Create a mock personality engine
+        mock_personality_engine = MagicMock()
+        mock_personality_engine.get_personality.return_value = mock_personality
+        mock_personality_engine.get_response_with_style.return_value = "TRUE - Grug say sky blue sometimes."
+
         with (
-            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
-            patch("bot.log", mock_logger),
+            patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
+            patch("src.grugthink.bot.log", mock_logger),
             patch("asyncio.get_running_loop") as mock_loop,
         ):
             # Mock the executor
@@ -75,14 +89,17 @@ class TestDiscordIntegration:
 
             mock_loop.return_value.run_in_executor = mock_executor
 
-            import bot
+            from src.grugthink import bot
 
             # Setup mock responses
             mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
             server_db_mock = MagicMock()
             server_db_mock.search_facts.return_value = []
 
-            with patch.object(bot, "get_server_db", return_value=server_db_mock):
+            with (
+                patch.object(bot, "_personality_engine_instance", mock_personality_engine),
+                patch.object(bot, "get_server_db", return_value=server_db_mock),
+            ):
                 # Execute the command
                 await bot._handle_verification(mock_interaction)
 
@@ -95,14 +112,37 @@ class TestDiscordIntegration:
     @pytest.mark.asyncio
     async def test_learn_command_integration(self, mock_interaction):
         """Test the learn command end-to-end."""
-        with patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}), patch("bot.log", mock_logger):
-            import bot
+        # Ensure guild_id is set
+        mock_interaction.guild_id = 12345
+        mock_interaction.user.id = 12345  # Make user trusted
+
+        # Create a mock personality object
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+
+        # Create a mock personality engine
+        mock_personality_engine = MagicMock()
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        with (
+            patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
+            patch("src.grugthink.bot.log", mock_logger),
+        ):
+            from src.grugthink import bot
 
             # Setup mock responses
             server_db_mock = MagicMock()
             server_db_mock.add_fact.return_value = True
 
-            with patch.object(bot, "get_server_db", return_value=server_db_mock):
+            with (
+                patch.object(bot, "_personality_engine_instance", mock_personality_engine),
+                patch.object(bot, "get_server_db", return_value=server_db_mock),
+                patch("src.grugthink.bot.config") as bot_config,
+            ):
+                bot_config.TRUSTED_USER_IDS = [12345]
+
                 # Execute the command
                 await bot.learn.callback(mock_interaction, "Grug love mammoth meat.")
 
@@ -119,12 +159,12 @@ class TestDiscordIntegration:
     async def test_rate_limiting_integration(self, mock_interaction, mock_message):
         """Test rate limiting functionality."""
         with (
-            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
-            patch("grug_structured_logger.get_logger", return_value=mock_logger),
+            patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
+            patch("src.grugthink.bot.log", mock_logger),
         ):
             import time
 
-            import bot
+            from src.grugthink import bot
 
             # Set up rate limiting
             bot.user_cooldowns[mock_interaction.user.id] = time.time()
@@ -140,21 +180,38 @@ class TestDiscordIntegration:
     @pytest.mark.asyncio
     async def test_untrusted_user_learn_integration(self, mock_interaction):
         """Test learn command with untrusted user."""
+        # Ensure guild_id is set
+        mock_interaction.guild_id = 12345
+        mock_interaction.user.id = 99999  # Make user untrusted
+
+        # Create a mock personality object
+        mock_personality = MagicMock()
+        mock_personality.response_style = "caveman"
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+
+        # Create a mock personality engine
+        mock_personality_engine = MagicMock()
+        mock_personality_engine.get_personality.return_value = mock_personality
+
         with (
-            patch.dict("sys.modules", {"config": mock_config, "grug_db": MagicMock()}),
-            patch("grug_structured_logger.get_logger", return_value=mock_logger),
+            patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
+            patch("src.grugthink.bot.log", mock_logger),
         ):
-            import bot
+            from src.grugthink import bot
 
-            # Make user untrusted
-            mock_interaction.user.id = 99999
+            with (
+                patch.object(bot, "_personality_engine_instance", mock_personality_engine),
+                patch("src.grugthink.bot.config") as bot_config,
+            ):
+                bot_config.TRUSTED_USER_IDS = [12345]  # User 99999 is not in this list
 
-            # Execute the command
-            await bot.learn.callback(mock_interaction, "Untrusted fact.")
+                # Execute the command
+                await bot.learn.callback(mock_interaction, "Untrusted fact.")
 
-            # Verify rejection
-            mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-            mock_interaction.followup.send.assert_called_once_with("You not trusted to teach Grug.", ephemeral=True)
+                # Verify rejection
+                mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
+                mock_interaction.followup.send.assert_called_once_with("You not trusted to teach Grug.", ephemeral=True)
 
 
 class TestDatabaseIntegration:
@@ -166,7 +223,7 @@ class TestDatabaseIntegration:
         import os
         import tempfile
 
-        from grug_db import GrugDB
+        from src.grugthink.grug_db import GrugDB
 
         # Create temporary database
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -211,26 +268,43 @@ class TestConfigurationIntegration:
 
     def test_config_loading_integration(self, monkeypatch):
         """Test configuration loading with various scenarios."""
-        # Test with minimal valid config
+        # Clear all environment variables first
+        env_vars_to_clear = [
+            "DISCORD_TOKEN",
+            "GEMINI_API_KEY",
+            "OLLAMA_URLS",
+            "OLLAMA_MODELS",
+            "GOOGLE_API_KEY",
+            "GOOGLE_CSE_ID",
+            "GRUGBOT_DATA_DIR",
+            "GRUGBOT_VARIANT",
+            "TRUSTED_USER_IDS",
+            "LOG_LEVEL",
+            "LOAD_EMBEDDER",
+        ]
+        for var in env_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
+
+        # Set only the required minimal config
         monkeypatch.setenv("DISCORD_TOKEN", "test_token_123")
         monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
-        monkeypatch.delenv("OLLAMA_URLS", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_CSE_ID", raising=False)
         monkeypatch.setenv("GRUGBOT_VARIANT", "prod")
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
 
-        # Reload config module
+        # Reload config module completely
         import sys
 
-        if "config" in sys.modules:
-            del sys.modules["config"]
+        modules_to_remove = ["src.grugthink.config", "src.grugthink"]
+        for module_name in modules_to_remove:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
 
-        import config
+        from src.grugthink import config
 
         assert config.USE_GEMINI is True
         assert config.CAN_SEARCH is False
         assert config.GRUGBOT_VARIANT == "prod"
-        assert config.LOG_LEVEL_STR == "WARNING"  # From conftest.py
+        assert config.LOG_LEVEL_STR == "INFO"
 
         # Test log_initial_settings doesn't crash
         config.log_initial_settings()

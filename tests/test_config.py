@@ -7,8 +7,15 @@ import pytest
 
 # Helper function to reload the config module
 def _reload_config():
-    if "src.grugthink.config" in sys.modules:
-        del sys.modules["src.grugthink.config"]
+    # Remove the config module from cache to force reload
+    modules_to_remove = [
+        "src.grugthink.config",
+        "src.grugthink",
+    ]
+    for module_name in modules_to_remove:
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
     from src.grugthink import config
 
     return config
@@ -93,7 +100,7 @@ def test_valid_config_gemini(monkeypatch):
 
 
 def test_valid_config_ollama(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("OLLAMA_URLS", "http://localhost:11434,http://192.168.1.100:11434")
     monkeypatch.setenv("OLLAMA_MODELS", "llama3.2:3b,grug:latest")
     config = _reload_config()
@@ -124,9 +131,9 @@ def test_default_values(monkeypatch):
     assert config.GEMINI_MODEL == "gemini-pro"
     assert config.OLLAMA_MODELS == ["llama3.2:3b"]  # Default if OLLAMA_MODELS not set but OLLAMA_URLS is
     assert config.DB_PATH.endswith("grug_lore.db")
-    # Check that DB_PATH is within the project directory
+    # Check that DB_PATH is within the src/grugthink directory
     assert os.path.abspath(os.path.dirname(config.DB_PATH)) == os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..")
+        os.path.join(os.path.dirname(__file__), "../src/grugthink")
     )
 
 

@@ -64,7 +64,20 @@ user_cooldowns = {}
 
 # Initialize Server Manager and Personality Engine
 server_manager = GrugServerManager(config.DB_PATH)
-personality_engine = PersonalityEngine("personalities.db")
+
+_personality_engine_instance = None
+
+
+def get_personality_engine():
+    global _personality_engine_instance
+    if _personality_engine_instance is None:
+        _personality_engine_instance = PersonalityEngine("personalities.db")
+    return _personality_engine_instance
+
+
+def _reset_personality_engine():
+    global _personality_engine_instance
+    _personality_engine_instance = None
 
 
 def get_server_db(interaction_or_guild_id):
@@ -109,7 +122,7 @@ log_initial_settings()
 
 def build_personality_context(statement: str, server_db, server_id: str) -> str:
     """Build personality context with semantically relevant lore for this server."""
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
 
     # Get base context from personality
     base_context = personality.base_context
@@ -138,7 +151,7 @@ def build_personality_prompt(statement: str, server_db, server_id: str, external
 
     # Add external info using personality engine
     if external_info:
-        personality_context = personality_engine.get_context_prompt(server_id, external_info)
+        personality_context = get_personality_engine().get_context_prompt(server_id, external_info)
 
     return f"""{personality_context}
 
@@ -252,7 +265,7 @@ def query_model(statement: str, server_db, server_id: str) -> str | None:
     prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, external_info)
 
     # Track personality evolution
-    personality_engine.evolve_personality(server_id, clean_stmt)
+    get_personality_engine().evolve_personality(server_id, clean_stmt)
 
     if config.USE_GEMINI:
         return query_gemini_api(prompt_text, cache_key, server_db)
@@ -341,7 +354,7 @@ async def on_ready():
 async def on_guild_join(guild):
     """Initialize personality when joining a new server."""
     server_id = str(guild.id)
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
 
     log.info(
         "Joined new server, personality initialized",
@@ -363,7 +376,7 @@ async def on_message(message):
 
     # Get personality for this server
     server_id = str(message.guild.id) if message.guild else "dm"
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
     bot_name = personality.chosen_name or personality.name
 
     # Check if bot name is mentioned in the message
@@ -487,7 +500,7 @@ async def handle_auto_verification(message, server_id: str, personality):
 
         if result:
             # Apply personality style to response
-            styled_result = personality_engine.get_response_with_style(server_id, result)
+            styled_result = get_personality_engine().get_response_with_style(server_id, result)
             await thinking_message.edit(content=f"🤔 {styled_result}")
 
             log.info(
@@ -503,7 +516,7 @@ async def handle_auto_verification(message, server_id: str, personality):
             )
         else:
             # Use personality-appropriate error message
-            error_msg = personality_engine.get_error_message(server_id)
+            error_msg = get_personality_engine().get_error_message(server_id)
             await thinking_message.edit(content=f"❓ {error_msg}")
 
     except Exception as exc:
@@ -512,7 +525,7 @@ async def handle_auto_verification(message, server_id: str, personality):
             extra={"error": str(exc), "user_id": str(message.author.id), "server_id": server_id},
         )
         # Use personality for error message
-        error_msg = personality_engine.get_error_message(server_id)
+        error_msg = get_personality_engine().get_error_message(server_id)
         await thinking_message.edit(content=f"💥 {error_msg}")
 
 
@@ -542,7 +555,7 @@ async def _handle_verification(interaction: discord.Interaction):
 
     # Get server ID and personality info
     server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
     thinking_msg = f"{personality.chosen_name or personality.name} thinking..."
 
     msg = await interaction.followup.send(thinking_msg, ephemeral=False)
@@ -555,10 +568,10 @@ async def _handle_verification(interaction: discord.Interaction):
 
         if result:
             # Apply personality style to response
-            styled_result = personality_engine.get_response_with_style(server_id, result)
+            styled_result = get_personality_engine().get_response_with_style(server_id, result)
             await msg.edit(content=f"Verification: {styled_result}")
         else:
-            error_msg = personality_engine.get_error_message(server_id)
+            error_msg = get_personality_engine().get_error_message(server_id)
             await msg.edit(content=error_msg)
 
     except Exception as exc:
@@ -567,7 +580,7 @@ async def _handle_verification(interaction: discord.Interaction):
             extra={"error": str(exc), "traceback": traceback.format_exc()},
         )
         # Use personality for error message
-        error_msg = personality_engine.get_error_message(server_id)
+        error_msg = get_personality_engine().get_error_message(server_id)
         await msg.edit(content=f"💥 {error_msg}")
 
 
@@ -583,7 +596,7 @@ async def learn(interaction: discord.Interaction, fact: str):
 
     # Get personality info
     server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
     bot_name = personality.chosen_name or personality.name
 
     if interaction.user.id not in config.TRUSTED_USER_IDS:
@@ -636,7 +649,7 @@ async def what_know(interaction: discord.Interaction):
 
     # Get personality info
     server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
     bot_name = personality.chosen_name or personality.name
 
     # Get the server-specific database
@@ -682,7 +695,7 @@ async def what_know(interaction: discord.Interaction):
 async def help_command(interaction: discord.Interaction):
     # Get personality info
     server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = personality_engine.get_personality(server_id)
+    personality = get_personality_engine().get_personality(server_id)
     bot_name = personality.chosen_name or personality.name
 
     if personality.response_style == "caveman":
@@ -717,8 +730,9 @@ async def help_command(interaction: discord.Interaction):
 @tree.command(name="personality", description="Shows the bot's personality information.")
 async def personality_info(interaction: discord.Interaction):
     # Get personality info
+    # Get personality info
     server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality_info = personality_engine.get_personality_info(server_id)
+    personality_info = get_personality_engine().get_personality_info(server_id)
 
     embed = discord.Embed(
         title=f"Personality: {personality_info['name']}",
