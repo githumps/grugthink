@@ -18,10 +18,16 @@ def main():
     """Main entry point that delegates to appropriate module."""
     if len(sys.argv) > 1 and sys.argv[1] == "multi-bot":
         # Multi-bot container mode
+        import asyncio
         from grugthink.main import main as multi_main
 
         sys.argv.pop(1)  # Remove 'multi-bot' argument
-        multi_main()
+        
+        # Set up proper event loop policy for different platforms
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+        asyncio.run(multi_main())
     else:
         # Single bot mode (default)
         from grugthink.bot import main as bot_main
