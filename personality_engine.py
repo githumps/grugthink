@@ -280,8 +280,16 @@ based on your experiences in this specific Discord server.""",
 
     def _create_new_personality(self, server_id: str):
         """Create a new personality for a server."""
-        # For now, default to Grug template, but this could be randomized or user-selected
-        template_name = "grug"  # TODO: Make this configurable or random
+        # Check for forced personality via environment variable
+        forced_personality = os.getenv("FORCE_PERSONALITY", "").lower()
+        
+        if forced_personality in self.templates:
+            template_name = forced_personality
+            log.info(f"Using forced personality: {template_name}", extra={"server_id": server_id})
+        else:
+            # Default to Grug template, but this could be randomized or user-selected
+            template_name = "grug"  # TODO: Make this configurable or random
+            
         template = self.templates[template_name]
 
         personality = PersonalityState(
