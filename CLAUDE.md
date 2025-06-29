@@ -26,6 +26,7 @@ YOU MUST ensure the project will successfully work in Docker with ALL Dockerfile
 YOU MUST ensure the project will build correctly when committed to Github and the automated Github Actions run to build and check.
 YOU MUST ensure all documentation and markdown files are updated with new project details such as if new commands exist, etc.
 YOU MUST test new features in both single-bot and multi-bot container environments.
+**YOU MUST run `ruff check . --fix && ruff format .` and fix ALL linting errors before finishing any task to ensure GitHub Actions pass.**
 
 ### Multi-Bot Container Development
 When developing new features:
@@ -150,7 +151,8 @@ PYTHONPATH=. pytest -q                         # Quick summary
 
 ### Complete Test and Lint Cycle
 ```bash
-# Full development check (run in activated venv)
+# MANDATORY: Full development check (run in activated python3.11 venv)
+# This MUST be run before finishing any task to ensure GitHub Actions pass
 ruff check . --fix
 ruff format .
 PYTHONPATH=. pytest

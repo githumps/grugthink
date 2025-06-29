@@ -25,6 +25,7 @@ log = get_logger(__name__)
 @dataclass
 class ConfigTemplate:
     """Template for creating bot configurations."""
+
     name: str
     description: str
     force_personality: Optional[str] = None
@@ -67,10 +68,7 @@ class ConfigManager:
         self._load_config()
         self._start_watching()
 
-        log.info("ConfigManager initialized", extra={
-            "config_file": config_file,
-            "templates": len(self.templates)
-        })
+        log.info("ConfigManager initialized", extra={"config_file": config_file, "templates": len(self.templates)})
 
     def _create_default_templates(self) -> Dict[str, ConfigTemplate]:
         """Create default bot configuration templates."""
@@ -79,31 +77,31 @@ class ConfigManager:
                 name="Pure Grug",
                 description="Caveman personality only, no evolution",
                 force_personality="grug",
-                load_embedder=True
+                load_embedder=True,
             ),
             "pure_big_rob": ConfigTemplate(
                 name="Pure Big Rob",
                 description="norf FC lad personality only, no evolution",
                 force_personality="big_rob",
-                load_embedder=True
+                load_embedder=True,
             ),
             "evolution_bot": ConfigTemplate(
                 name="Evolution Bot",
                 description="Adaptive personality that evolves per server",
                 force_personality=None,  # No forced personality
-                load_embedder=True
+                load_embedder=True,
             ),
             "lightweight_grug": ConfigTemplate(
                 name="Lightweight Grug",
                 description="Grug personality without semantic search",
                 force_personality="grug",
-                load_embedder=False
+                load_embedder=False,
             ),
             "multi_personality": ConfigTemplate(
                 name="Multi-Personality",
                 description="Random personality selection per server",
                 force_personality=None,
-                load_embedder=True
+                load_embedder=True,
             ),
             "ollama_bot": ConfigTemplate(
                 name="Ollama Bot",
@@ -112,40 +110,33 @@ class ConfigManager:
                 load_embedder=True,
                 default_gemini_key=False,
                 default_ollama=True,
-                custom_env={
-                    "OLLAMA_URLS": "http://localhost:11434",
-                    "OLLAMA_MODELS": "llama3.2:3b"
-                }
-            )
+                custom_env={"OLLAMA_URLS": "http://localhost:11434", "OLLAMA_MODELS": "llama3.2:3b"},
+            ),
         }
 
     def _load_config(self):
         """Load configuration from file."""
         try:
             if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    if self.config_file.endswith('.yaml') or self.config_file.endswith('.yml'):
+                with open(self.config_file, "r") as f:
+                    if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
                         data = yaml.safe_load(f) or {}
                     else:
                         data = json.load(f)
 
                 with self._lock:
                     self.config_data = data
-                    self.env_vars = data.get('environment', {})
+                    self.env_vars = data.get("environment", {})
 
-                log.info("Configuration loaded", extra={
-                    "config_file": self.config_file,
-                    "env_vars": len(self.env_vars)
-                })
+                log.info(
+                    "Configuration loaded", extra={"config_file": self.config_file, "env_vars": len(self.env_vars)}
+                )
             else:
                 # Create default configuration
                 self._create_default_config()
 
         except Exception as e:
-            log.error("Failed to load configuration", extra={
-                "error": str(e),
-                "config_file": self.config_file
-            })
+            log.error("Failed to load configuration", extra={"error": str(e), "config_file": self.config_file})
             self._create_default_config()
 
     def _create_default_config(self):
@@ -157,51 +148,32 @@ class ConfigManager:
                 "log_level": "INFO",
                 "data_directory": "./data",
                 "enable_monitoring": True,
-                "api_rate_limit": 100
+                "api_rate_limit": 100,
             },
-            "environment": {
-                "GRUGBOT_VARIANT": "prod",
-                "LOG_LEVEL": "INFO"
-            },
+            "environment": {"GRUGBOT_VARIANT": "prod", "LOG_LEVEL": "INFO"},
             "api_keys": {
-                "gemini": {
-                    "primary": "",
-                    "secondary": "",
-                    "fallback": ""
-                },
-                "google_search": {
-                    "api_key": "",
-                    "cse_id": ""
-                },
-                "discord": {
-                    "tokens": []
-                }
+                "gemini": {"primary": "", "secondary": "", "fallback": ""},
+                "google_search": {"api_key": "", "cse_id": ""},
+                "discord": {"tokens": []},
             },
-            "bot_templates": {
-                template_id: asdict(template)
-                for template_id, template in self.templates.items()
-            }
+            "bot_templates": {template_id: asdict(template) for template_id, template in self.templates.items()},
         }
 
         try:
-            with open(self.config_file, 'w') as f:
-                if self.config_file.endswith('.yaml') or self.config_file.endswith('.yml'):
+            with open(self.config_file, "w") as f:
+                if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
                     yaml.safe_dump(default_config, f, indent=2, default_flow_style=False)
                 else:
                     json.dump(default_config, f, indent=2)
 
             with self._lock:
                 self.config_data = default_config
-                self.env_vars = default_config.get('environment', {})
+                self.env_vars = default_config.get("environment", {})
 
-            log.info("Created default configuration", extra={
-                "config_file": self.config_file
-            })
+            log.info("Created default configuration", extra={"config_file": self.config_file})
 
         except Exception as e:
-            log.error("Failed to create default configuration", extra={
-                "error": str(e)
-            })
+            log.error("Failed to create default configuration", extra={"error": str(e)})
 
     def _reload_config(self):
         """Reload configuration and notify callbacks."""
@@ -212,17 +184,13 @@ class ConfigManager:
 
         # Check for changes and notify callbacks
         if self.config_data != old_config or self.env_vars != old_env:
-            log.info("Configuration changed, notifying callbacks", extra={
-                "callbacks": len(self.change_callbacks)
-            })
+            log.info("Configuration changed, notifying callbacks", extra={"callbacks": len(self.change_callbacks)})
 
             for callback in self.change_callbacks:
                 try:
                     callback(old_config, self.config_data, old_env, self.env_vars)
                 except Exception as e:
-                    log.error("Error in config change callback", extra={
-                        "error": str(e)
-                    })
+                    log.error("Error in config change callback", extra={"error": str(e)})
 
     def _start_watching(self):
         """Start watching configuration file for changes."""
@@ -231,14 +199,10 @@ class ConfigManager:
             self.observer.schedule(self.handler, config_dir, recursive=False)
             self.observer.start()
 
-            log.info("Started configuration file watcher", extra={
-                "directory": config_dir
-            })
+            log.info("Started configuration file watcher", extra={"directory": config_dir})
 
         except Exception as e:
-            log.error("Failed to start file watcher", extra={
-                "error": str(e)
-            })
+            log.error("Failed to start file watcher", extra={"error": str(e)})
 
     def add_change_callback(self, callback: Callable):
         """Add callback for configuration changes."""
@@ -250,7 +214,7 @@ class ConfigManager:
             if key is None:
                 return self.config_data.copy()
 
-            keys = key.split('.')
+            keys = key.split(".")
             data = self.config_data
 
             for k in keys:
@@ -264,7 +228,7 @@ class ConfigManager:
     def set_config(self, key: str, value: Any):
         """Set configuration value."""
         with self._lock:
-            keys = key.split('.')
+            keys = key.split(".")
             data = self.config_data
 
             # Navigate to parent
@@ -294,7 +258,7 @@ class ConfigManager:
         """Set environment variable in config (not actual env)."""
         with self._lock:
             self.env_vars[key] = value
-            self.config_data['environment'] = self.env_vars
+            self.config_data["environment"] = self.env_vars
             self._save_config()
 
     def get_api_keys(self, service: str) -> Dict[str, Any]:
@@ -316,16 +280,13 @@ class ConfigManager:
             "name": name,
             "token": token,
             "added_at": time.time(),
-            "active": True
+            "active": True,
         }
 
         tokens.append(token_entry)
         self.set_config("api_keys.discord.tokens", tokens)
 
-        log.info("Added Discord token", extra={
-            "name": name,
-            "token_id": token_entry["id"]
-        })
+        log.info("Added Discord token", extra={"name": name, "token_id": token_entry["id"]})
 
         return token_entry["id"]
 
@@ -364,10 +325,7 @@ class ConfigManager:
                 try:
                     templates[template_id] = ConfigTemplate(**template_data)
                 except Exception as e:
-                    log.error("Invalid template in config", extra={
-                        "template_id": template_id,
-                        "error": str(e)
-                    })
+                    log.error("Invalid template in config", extra={"template_id": template_id, "error": str(e)})
 
         return templates
 
@@ -418,20 +376,16 @@ class ConfigManager:
     def _save_config(self):
         """Save current configuration to file."""
         try:
-            with open(self.config_file, 'w') as f:
-                if self.config_file.endswith('.yaml') or self.config_file.endswith('.yml'):
+            with open(self.config_file, "w") as f:
+                if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
                     yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
                 else:
                     json.dump(self.config_data, f, indent=2)
 
-            log.debug("Configuration saved", extra={
-                "config_file": self.config_file
-            })
+            log.debug("Configuration saved", extra={"config_file": self.config_file})
 
         except Exception as e:
-            log.error("Failed to save configuration", extra={
-                "error": str(e)
-            })
+            log.error("Failed to save configuration", extra={"error": str(e)})
 
     def export_config(self, filename: str = None) -> str:
         """Export current configuration to file."""
@@ -440,48 +394,38 @@ class ConfigManager:
             filename = f"grugthink_config_backup_{timestamp}.yaml"
 
         try:
-            with open(filename, 'w') as f:
+            with open(filename, "w") as f:
                 yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
 
-            log.info("Configuration exported", extra={
-                "filename": filename
-            })
+            log.info("Configuration exported", extra={"filename": filename})
 
             return filename
 
         except Exception as e:
-            log.error("Failed to export configuration", extra={
-                "error": str(e),
-                "filename": filename
-            })
+            log.error("Failed to export configuration", extra={"error": str(e), "filename": filename})
             raise
 
     def import_config(self, filename: str):
         """Import configuration from file."""
         try:
-            with open(filename, 'r') as f:
-                if filename.endswith('.yaml') or filename.endswith('.yml'):
+            with open(filename, "r") as f:
+                if filename.endswith(".yaml") or filename.endswith(".yml"):
                     imported_config = yaml.safe_load(f)
                 else:
                     imported_config = json.load(f)
 
             with self._lock:
                 self.config_data = imported_config
-                self.env_vars = imported_config.get('environment', {})
+                self.env_vars = imported_config.get("environment", {})
                 self._save_config()
 
-            log.info("Configuration imported", extra={
-                "filename": filename
-            })
+            log.info("Configuration imported", extra={"filename": filename})
 
             # Notify callbacks
             self._reload_config()
 
         except Exception as e:
-            log.error("Failed to import configuration", extra={
-                "error": str(e),
-                "filename": filename
-            })
+            log.error("Failed to import configuration", extra={"error": str(e), "filename": filename})
             raise
 
     def stop(self):

@@ -284,17 +284,15 @@ based on your experiences in this specific Discord server.""",
         forced_personality = os.getenv("FORCE_PERSONALITY", "").lower()
 
         # Handle common aliases for personality names
-        personality_aliases = {
-            "big_rob": "bigrob",
-            "biggrob": "bigrob",
-            "rob": "bigrob"
-        }
+        personality_aliases = {"big_rob": "bigrob", "biggrob": "bigrob", "rob": "bigrob"}
 
         # Resolve alias if needed
         if forced_personality in personality_aliases:
             resolved_personality = personality_aliases[forced_personality]
-            log.info(f"Resolved personality alias: {forced_personality} -> {resolved_personality}",
-                    extra={"server_id": server_id})
+            log.info(
+                f"Resolved personality alias: {forced_personality} -> {resolved_personality}",
+                extra={"server_id": server_id},
+            )
             forced_personality = resolved_personality
 
         if forced_personality in self.templates:
@@ -302,8 +300,11 @@ based on your experiences in this specific Discord server.""",
             log.info(f"Using forced personality: {template_name}", extra={"server_id": server_id})
         else:
             if os.getenv("FORCE_PERSONALITY"):
-                log.warning(f"Invalid FORCE_PERSONALITY '{os.getenv('FORCE_PERSONALITY')}'. Available: {list(self.templates.keys())}",
-                           extra={"server_id": server_id})
+                log.warning(
+                    f"Invalid FORCE_PERSONALITY '{os.getenv('FORCE_PERSONALITY')}'. "
+                    f"Available: {list(self.templates.keys())}",
+                    extra={"server_id": server_id},
+                )
             # Default to Grug template, but this could be randomized or user-selected
             template_name = "grug"  # TODO: Make this configurable or random
 

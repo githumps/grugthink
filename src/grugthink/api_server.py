@@ -12,13 +12,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from .bot_manager import BotManager
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .bot_manager import BotManager
 from .config_manager import ConfigManager
 from .grug_structured_logger import get_logger
 
@@ -93,7 +93,7 @@ class APIServer:
         self.app = FastAPI(
             title="GrugThink Management API",
             description="API for managing multiple Discord bot instances",
-            version="2.0.0"
+            version="2.0.0",
         )
 
         # WebSocket connections for real-time updates
@@ -114,7 +114,7 @@ class APIServer:
         # Setup static file serving for web dashboard
         try:
             self.app.mount("/static", StaticFiles(directory="web/static"), name="static")
-        except:
+        except Exception:
             log.warning("Static files directory not found, web dashboard may not work")
 
         # Setup periodic tasks
@@ -130,7 +130,7 @@ class APIServer:
         async def dashboard():
             try:
                 return FileResponse("web/index.html")
-            except:
+            except Exception:
                 return {"message": "GrugThink Management API", "version": "2.0.0"}
 
         # Bot management routes
@@ -157,11 +157,7 @@ class APIServer:
                     raise HTTPException(status_code=400, detail=f"Template '{request.template_id}' not found")
 
                 # Create bot environment from template
-                bot_env = self.config_manager.create_bot_env(
-                    request.template_id,
-                    request.discord_token,
-                    **request.custom_env
-                )
+                self.config_manager.create_bot_env(request.template_id, request.discord_token, **request.custom_env)
 
                 # Override with specific values if provided
                 overrides = {}
@@ -183,15 +179,13 @@ class APIServer:
                     discord_token=request.discord_token,
                     force_personality=template.force_personality,
                     load_embedder=template.load_embedder,
-                    **overrides
+                    **overrides,
                 )
 
                 await self._broadcast_update("bot_created", {"bot_id": bot_id, "name": request.name})
 
                 return BotActionResponse(
-                    success=True,
-                    message=f"Bot '{request.name}' created successfully",
-                    bot_id=bot_id
+                    success=True, message=f"Bot '{request.name}' created successfully", bot_id=bot_id
                 )
 
             except Exception as e:
@@ -213,11 +207,7 @@ class APIServer:
 
                 await self._broadcast_update("bot_updated", {"bot_id": bot_id, "updates": list(updates.keys())})
 
-                return BotActionResponse(
-                    success=True,
-                    message="Bot configuration updated successfully",
-                    bot_id=bot_id
-                )
+                return BotActionResponse(success=True, message="Bot configuration updated successfully", bot_id=bot_id)
 
             except Exception as e:
                 log.error("Failed to update bot", extra={"bot_id": bot_id, "error": str(e)})
@@ -233,11 +223,7 @@ class APIServer:
 
                 await self._broadcast_update("bot_deleted", {"bot_id": bot_id})
 
-                return BotActionResponse(
-                    success=True,
-                    message="Bot deleted successfully",
-                    bot_id=bot_id
-                )
+                return BotActionResponse(success=True, message="Bot deleted successfully", bot_id=bot_id)
 
             except Exception as e:
                 log.error("Failed to delete bot", extra={"bot_id": bot_id, "error": str(e)})
@@ -249,11 +235,7 @@ class APIServer:
             try:
                 background_tasks.add_task(self._start_bot_task, bot_id)
 
-                return BotActionResponse(
-                    success=True,
-                    message="Bot start initiated",
-                    bot_id=bot_id
-                )
+                return BotActionResponse(success=True, message="Bot start initiated", bot_id=bot_id)
 
             except Exception as e:
                 log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
@@ -265,11 +247,7 @@ class APIServer:
             try:
                 background_tasks.add_task(self._stop_bot_task, bot_id)
 
-                return BotActionResponse(
-                    success=True,
-                    message="Bot stop initiated",
-                    bot_id=bot_id
-                )
+                return BotActionResponse(success=True, message="Bot stop initiated", bot_id=bot_id)
 
             except Exception as e:
                 log.error("Failed to stop bot", extra={"bot_id": bot_id, "error": str(e)})
@@ -281,11 +259,7 @@ class APIServer:
             try:
                 background_tasks.add_task(self._restart_bot_task, bot_id)
 
-                return BotActionResponse(
-                    success=True,
-                    message="Bot restart initiated",
-                    bot_id=bot_id
-                )
+                return BotActionResponse(success=True, message="Bot restart initiated", bot_id=bot_id)
 
             except Exception as e:
                 log.error("Failed to restart bot", extra={"bot_id": bot_id, "error": str(e)})
@@ -319,7 +293,7 @@ class APIServer:
                     "name": template.name,
                     "description": template.description,
                     "force_personality": template.force_personality,
-                    "load_embedder": template.load_embedder
+                    "load_embedder": template.load_embedder,
                 }
                 for template_id, template in templates.items()
             }
@@ -346,7 +320,7 @@ class APIServer:
                     "id": token["id"],
                     "name": token["name"],
                     "added_at": token["added_at"],
-                    "active": token.get("active", True)
+                    "active": token.get("active", True),
                 }
                 for token in tokens
             ]
@@ -356,10 +330,9 @@ class APIServer:
             """Set API key for a service."""
             try:
                 self.config_manager.set_api_key(request.service, request.key_name, request.value)
-                await self._broadcast_update("api_key_updated", {
-                    "service": request.service,
-                    "key_name": request.key_name
-                })
+                await self._broadcast_update(
+                    "api_key_updated", {"service": request.service, "key_name": request.key_name}
+                )
 
                 return {"status": "success", "message": f"{request.service} API key updated"}
 
@@ -391,7 +364,7 @@ class APIServer:
                 total_users=total_users,
                 uptime=0.0,  # TODO: Implement uptime tracking
                 memory_usage=0.0,  # TODO: Implement memory monitoring
-                api_calls_today=0  # TODO: Implement API call tracking
+                api_calls_today=0,  # TODO: Implement API call tracking
             )
 
         @self.app.get("/api/system/logs")
@@ -420,10 +393,9 @@ class APIServer:
         """Background task to start a bot."""
         try:
             success = await self.bot_manager.start_bot(bot_id)
-            await self._broadcast_update("bot_status_changed", {
-                "bot_id": bot_id,
-                "status": "running" if success else "error"
-            })
+            await self._broadcast_update(
+                "bot_status_changed", {"bot_id": bot_id, "status": "running" if success else "error"}
+            )
         except Exception as e:
             log.error("Error in start bot task", extra={"bot_id": bot_id, "error": str(e)})
 
@@ -431,10 +403,9 @@ class APIServer:
         """Background task to stop a bot."""
         try:
             success = await self.bot_manager.stop_bot(bot_id)
-            await self._broadcast_update("bot_status_changed", {
-                "bot_id": bot_id,
-                "status": "stopped" if success else "error"
-            })
+            await self._broadcast_update(
+                "bot_status_changed", {"bot_id": bot_id, "status": "stopped" if success else "error"}
+            )
         except Exception as e:
             log.error("Error in stop bot task", extra={"bot_id": bot_id, "error": str(e)})
 
@@ -442,10 +413,9 @@ class APIServer:
         """Background task to restart a bot."""
         try:
             success = await self.bot_manager.restart_bot(bot_id)
-            await self._broadcast_update("bot_status_changed", {
-                "bot_id": bot_id,
-                "status": "running" if success else "error"
-            })
+            await self._broadcast_update(
+                "bot_status_changed", {"bot_id": bot_id, "status": "running" if success else "error"}
+            )
         except Exception as e:
             log.error("Error in restart bot task", extra={"bot_id": bot_id, "error": str(e)})
 
@@ -454,11 +424,7 @@ class APIServer:
         if not self.websocket_connections:
             return
 
-        message = {
-            "type": event_type,
-            "timestamp": datetime.now().isoformat(),
-            "data": data
-        }
+        message = {"type": event_type, "timestamp": datetime.now().isoformat(), "data": data}
 
         # Remove disconnected websockets
         active_connections = []
@@ -466,7 +432,7 @@ class APIServer:
             try:
                 await websocket.send_text(json.dumps(message))
                 active_connections.append(websocket)
-            except:
+            except Exception:
                 # Connection is dead, remove it
                 pass
 

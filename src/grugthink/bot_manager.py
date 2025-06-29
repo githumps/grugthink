@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import discord
 from discord.ext import commands
+
 from .grug_db import GrugDB
 from .grug_structured_logger import get_logger
 from .personality_engine import PersonalityEngine
@@ -28,6 +29,7 @@ log = get_logger(__name__)
 @dataclass
 class BotConfig:
     """Configuration for a single bot instance."""
+
     bot_id: str
     name: str
     discord_token: str
@@ -52,6 +54,7 @@ class BotConfig:
 @dataclass
 class BotInstance:
     """Runtime instance of a Discord bot."""
+
     config: BotConfig
     client: Optional[commands.Bot] = None
     personality_engine: Optional[PersonalityEngine] = None
@@ -74,16 +77,13 @@ class BotManager:
         # Load existing configurations
         self._load_configs()
 
-        log.info("BotManager initialized", extra={
-            "config_file": config_file,
-            "loaded_bots": len(self.bots)
-        })
+        log.info("BotManager initialized", extra={"config_file": config_file, "loaded_bots": len(self.bots)})
 
     def _load_configs(self):
         """Load bot configurations from file."""
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     configs = json.load(f)
 
                 for config_data in configs:
@@ -91,16 +91,10 @@ class BotManager:
                     instance = BotInstance(config=config)
                     self.bots[config.bot_id] = instance
 
-                log.info("Loaded bot configurations", extra={
-                    "count": len(configs),
-                    "bot_ids": list(self.bots.keys())
-                })
+                log.info("Loaded bot configurations", extra={"count": len(configs), "bot_ids": list(self.bots.keys())})
 
             except Exception as e:
-                log.error("Failed to load bot configurations", extra={
-                    "error": str(e),
-                    "config_file": self.config_file
-                })
+                log.error("Failed to load bot configurations", extra={"error": str(e), "config_file": self.config_file})
 
     def _save_configs(self):
         """Save current bot configurations to file."""
@@ -110,30 +104,19 @@ class BotManager:
                 config_dict = asdict(bot_instance.config)
                 configs.append(config_dict)
 
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 json.dump(configs, f, indent=2)
 
-            log.info("Saved bot configurations", extra={
-                "count": len(configs),
-                "config_file": self.config_file
-            })
+            log.info("Saved bot configurations", extra={"count": len(configs), "config_file": self.config_file})
 
         except Exception as e:
-            log.error("Failed to save bot configurations", extra={
-                "error": str(e),
-                "config_file": self.config_file
-            })
+            log.error("Failed to save bot configurations", extra={"error": str(e), "config_file": self.config_file})
 
     def create_bot(self, name: str, discord_token: str, **kwargs) -> str:
         """Create a new bot configuration."""
         bot_id = str(uuid.uuid4())
 
-        config = BotConfig(
-            bot_id=bot_id,
-            name=name,
-            discord_token=discord_token,
-            **kwargs
-        )
+        config = BotConfig(bot_id=bot_id, name=name, discord_token=discord_token, **kwargs)
 
         instance = BotInstance(config=config)
 
@@ -141,11 +124,9 @@ class BotManager:
             self.bots[bot_id] = instance
             self._save_configs()
 
-        log.info("Created new bot", extra={
-            "bot_id": bot_id,
-            "name": name,
-            "force_personality": config.force_personality
-        })
+        log.info(
+            "Created new bot", extra={"bot_id": bot_id, "name": name, "force_personality": config.force_personality}
+        )
 
         return bot_id
 
@@ -181,10 +162,7 @@ class BotManager:
         with self._lock:
             self._save_configs()
 
-        log.info("Updated bot configuration", extra={
-            "bot_id": bot_id,
-            "updated_fields": list(kwargs.keys())
-        })
+        log.info("Updated bot configuration", extra={"bot_id": bot_id, "updated_fields": list(kwargs.keys())})
 
         return True
 
@@ -204,7 +182,7 @@ class BotManager:
             "created_at": config.created_at,
             "last_heartbeat": instance.last_heartbeat,
             "guild_count": 0,
-            "user_count": 0
+            "user_count": 0,
         }
 
         # Add runtime info if bot is running
@@ -255,7 +233,7 @@ class BotManager:
             intents = discord.Intents.default()
             intents.message_content = True
 
-            client = commands.Bot(command_prefix='/', intents=intents)
+            client = commands.Bot(command_prefix="/", intents=intents)
             instance.client = client
 
             # Import and setup bot commands (we'll need to modularize the existing bot.py)
@@ -270,20 +248,16 @@ class BotManager:
             config.status = "running"
             instance.last_heartbeat = time.time()
 
-            log.info("Bot started successfully", extra={
-                "bot_id": bot_id,
-                "name": config.name,
-                "guild_count": len(client.guilds)
-            })
+            log.info(
+                "Bot started successfully",
+                extra={"bot_id": bot_id, "name": config.name, "guild_count": len(client.guilds)},
+            )
 
             return True
 
         except Exception as e:
             config.status = "error"
-            log.error("Failed to start bot", extra={
-                "bot_id": bot_id,
-                "error": str(e)
-            })
+            log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
             return False
 
     async def stop_bot(self, bot_id: str) -> bool:
@@ -325,10 +299,7 @@ class BotManager:
 
         except Exception as e:
             config.status = "error"
-            log.error("Failed to stop bot", extra={
-                "bot_id": bot_id,
-                "error": str(e)
-            })
+            log.error("Failed to stop bot", extra={"bot_id": bot_id, "error": str(e)})
             return False
 
     async def restart_bot(self, bot_id: str) -> bool:
@@ -375,16 +346,18 @@ class BotManager:
 
         client = instance.client
         personality_engine = instance.personality_engine
-        db = instance.db
 
         @client.event
         async def on_ready():
             instance.last_heartbeat = time.time()
-            log.info("Bot connected to Discord", extra={
-                "bot_id": instance.config.bot_id,
-                "bot_name": client.user.name,
-                "guild_count": len(client.guilds)
-            })
+            log.info(
+                "Bot connected to Discord",
+                extra={
+                    "bot_id": instance.config.bot_id,
+                    "bot_name": client.user.name,
+                    "guild_count": len(client.guilds),
+                },
+            )
 
         @client.tree.command(name="verify", description="Verify the truthfulness of the last message")
         async def verify(interaction: discord.Interaction):
@@ -396,24 +369,11 @@ class BotManager:
             try:
                 personality = personality_engine.get_personality(str(interaction.guild_id))
                 embed = discord.Embed(
-                    title=f"🎭 {personality.chosen_name or personality.name} Personality Status",
-                    color=0x00ff00
+                    title=f"🎭 {personality.chosen_name or personality.name} Personality Status", color=0x00FF00
                 )
-                embed.add_field(
-                    name="Evolution Stage",
-                    value=f"Stage {personality.evolution_stage}/3",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Interactions",
-                    value=str(personality.interaction_count),
-                    inline=True
-                )
-                embed.add_field(
-                    name="Response Style",
-                    value=personality.response_style,
-                    inline=True
-                )
+                embed.add_field(name="Evolution Stage", value=f"Stage {personality.evolution_stage}/3", inline=True)
+                embed.add_field(name="Interactions", value=str(personality.interaction_count), inline=True)
+                embed.add_field(name="Response Style", value=personality.response_style, inline=True)
 
                 await interaction.response.send_message(embed=embed)
 
@@ -423,15 +383,9 @@ class BotManager:
         # Sync commands
         try:
             synced = await client.tree.sync()
-            log.info("Commands synced", extra={
-                "bot_id": instance.config.bot_id,
-                "command_count": len(synced)
-            })
+            log.info("Commands synced", extra={"bot_id": instance.config.bot_id, "command_count": len(synced)})
         except Exception as e:
-            log.error("Failed to sync commands", extra={
-                "bot_id": instance.config.bot_id,
-                "error": str(e)
-            })
+            log.error("Failed to sync commands", extra={"bot_id": instance.config.bot_id, "error": str(e)})
 
     async def start_all_bots(self):
         """Start all configured bots."""
@@ -463,9 +417,7 @@ class BotManager:
                             instance.last_heartbeat = time.time()
                         else:
                             # Bot disconnected, attempt restart
-                            log.warning("Bot disconnected, attempting restart", extra={
-                                "bot_id": bot_id
-                            })
+                            log.warning("Bot disconnected, attempting restart", extra={"bot_id": bot_id})
                             await self.restart_bot(bot_id)
 
                 await asyncio.sleep(30)  # Check every 30 seconds

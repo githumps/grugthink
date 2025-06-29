@@ -63,10 +63,9 @@ class GrugThinkContainer:
             api_task = asyncio.create_task(self._run_api_server(api_port))
             self.tasks.append(api_task)
 
-            log.info("GrugThink Container started successfully", extra={
-                "api_port": api_port,
-                "auto_start_bots": start_bots
-            })
+            log.info(
+                "GrugThink Container started successfully", extra={"api_port": api_port, "auto_start_bots": start_bots}
+            )
 
             # Keep running until shutdown
             while self.running:
@@ -82,24 +81,18 @@ class GrugThinkContainer:
         try:
             bots = self.bot_manager.list_bots()
             auto_start_bots = [
-                bot for bot in bots
-                if self.config_manager.get_config(f"bots.{bot['bot_id']}.auto_start") != False
+                bot for bot in bots if self.config_manager.get_config(f"bots.{bot['bot_id']}.auto_start") is not False
             ]
 
             if auto_start_bots:
-                log.info("Starting configured bots", extra={
-                    "count": len(auto_start_bots)
-                })
+                log.info("Starting configured bots", extra={"count": len(auto_start_bots)})
 
                 for bot in auto_start_bots:
                     try:
-                        await self.bot_manager.start_bot(bot['bot_id'])
+                        await self.bot_manager.start_bot(bot["bot_id"])
                         await asyncio.sleep(5)  # Stagger starts
                     except Exception as e:
-                        log.error("Failed to start bot", extra={
-                            "bot_id": bot['bot_id'],
-                            "error": str(e)
-                        })
+                        log.error("Failed to start bot", extra={"bot_id": bot["bot_id"], "error": str(e)})
             else:
                 log.info("No bots configured for auto-start")
 
@@ -109,22 +102,16 @@ class GrugThinkContainer:
     async def _run_api_server(self, port: int):
         """Run the API server."""
         import uvicorn
-        config = uvicorn.Config(
-            self.api_server.app,
-            host="0.0.0.0",
-            port=port,
-            log_level="info"
-        )
+
+        config = uvicorn.Config(self.api_server.app, host="0.0.0.0", port=port, log_level="info")
         server = uvicorn.Server(config)
         await server.serve()
 
-    def _on_config_change(self, old_config: Dict[str, Any], new_config: Dict[str, Any],
-                         old_env: Dict[str, str], new_env: Dict[str, str]):
+    def _on_config_change(
+        self, old_config: Dict[str, Any], new_config: Dict[str, Any], old_env: Dict[str, str], new_env: Dict[str, str]
+    ):
         """Handle configuration changes."""
-        log.info("Configuration changed", extra={
-            "config_keys": list(new_config.keys()),
-            "env_vars": len(new_env)
-        })
+        log.info("Configuration changed", extra={"config_keys": list(new_config.keys()), "env_vars": len(new_env)})
 
         # TODO: Handle specific configuration changes
         # - Restart bots if their config changed
@@ -164,12 +151,9 @@ class GrugThinkContainer:
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="GrugThink Multi-Bot Container")
-    parser.add_argument("--no-auto-start", action="store_true",
-                       help="Don't automatically start configured bots")
-    parser.add_argument("--api-port", type=int, default=8080,
-                       help="Port for the management API (default: 8080)")
-    parser.add_argument("--create-demo", action="store_true",
-                       help="Create demo bot configurations")
+    parser.add_argument("--no-auto-start", action="store_true", help="Don't automatically start configured bots")
+    parser.add_argument("--api-port", type=int, default=8080, help="Port for the management API (default: 8080)")
+    parser.add_argument("--create-demo", action="store_true", help="Create demo bot configurations")
 
     args = parser.parse_args()
 
@@ -182,10 +166,7 @@ async def main():
     container = GrugThinkContainer()
 
     try:
-        await container.start(
-            start_bots=not args.no_auto_start,
-            api_port=args.api_port
-        )
+        await container.start(start_bots=not args.no_auto_start, api_port=args.api_port)
     except KeyboardInterrupt:
         log.info("Received keyboard interrupt")
     except Exception as e:
@@ -215,21 +196,9 @@ async def create_demo_configuration():
             return
 
         demo_bots = [
-            {
-                "name": "Pure Grug Bot",
-                "template": "pure_grug",
-                "description": "Caveman personality only"
-            },
-            {
-                "name": "Pure Big Rob Bot",
-                "template": "pure_big_rob",
-                "description": "norf FC lad personality only"
-            },
-            {
-                "name": "Evolution Bot",
-                "template": "evolution_bot",
-                "description": "Adaptive personality that evolves"
-            }
+            {"name": "Pure Grug Bot", "template": "pure_grug", "description": "Caveman personality only"},
+            {"name": "Pure Big Rob Bot", "template": "pure_big_rob", "description": "norf FC lad personality only"},
+            {"name": "Evolution Bot", "template": "evolution_bot", "description": "Adaptive personality that evolves"},
         ]
 
         created_bots = []
@@ -242,16 +211,15 @@ async def create_demo_configuration():
             )
             created_bots.append((bot_id, bot_config["name"]))
 
-            log.info("Created demo bot", extra={
-                "bot_id": bot_id,
-                "name": bot_config["name"],
-                "template": bot_config["template"]
-            })
+            log.info(
+                "Created demo bot",
+                extra={"bot_id": bot_id, "name": bot_config["name"], "template": bot_config["template"]},
+            )
 
-        log.info("Demo configuration created", extra={
-            "bot_count": len(created_bots),
-            "bots": [name for _, name in created_bots]
-        })
+        log.info(
+            "Demo configuration created",
+            extra={"bot_count": len(created_bots), "bots": [name for _, name in created_bots]},
+        )
 
         print("\n🎉 Demo configuration created!")
         print(f"Created {len(created_bots)} demo bots:")
