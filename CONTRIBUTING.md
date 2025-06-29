@@ -1,78 +1,181 @@
-# How to Help Grug (Contributing)
+# Contributing to GrugThink
 
-Grug is strong, but Grug can be stronger with help from other cavemen. If you want to help Grug, read these words.
+Thank you for your interest in contributing to GrugThink! This guide will help you get started with contributing to our adaptable Discord personality engine.
 
 ## Before You Start
 
-*   **Talk to Grug First:** If you want to make big changes, talk to the chief (project maintainer) first. Make a new issue on the big rock pile (GitHub Issues) to tell what you want to do. This stops Grug from doing same work twice.
+*   **Discuss major changes first:** For significant features or architectural changes, please create a GitHub issue to discuss your proposal before starting work. This prevents duplicate effort and ensures alignment with project goals.
 
-## How to Make Grug Stronger (Development Setup)
+## Development Setup
 
-1.  **Get Grug's Code:**
+### Quick Setup Options
+
+**Lightweight Development (Recommended)**:
+```bash
+chmod +x setup-codex.sh
+./setup-codex.sh
+```
+*Uses mocked ML dependencies for fast testing*
+
+**Full Development Environment**:
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+*Includes semantic search capabilities*
+
+### Manual Setup
+
+1.  **Clone Repository:**
     ```bash
     git clone https://github.com/githumps/grugthink.git
     cd grugthink
     ```
 
-2.  **Make Magic Air (Virtual Environment):**
+2.  **Create Virtual Environment:**
     ```bash
-    python3 -m venv venv
+    python3.11 -m venv venv
     source venv/bin/activate
     ```
 
-3.  **Get Tools:** Grug need tools to think and fight.
+3.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt -r requirements-dev.txt
     ```
 
-4.  **Tell Grug Secrets:** Copy `.env.example` to `.env` and fill it with your test secrets. Set `GRUGBOT_VARIANT=dev` for testing.
+4.  **Configure Environment:**
     ```bash
     cp .env.example .env
-    # Edit .env to set GRUGBOT_VARIANT=dev and add your test DISCORD_TOKEN
+    # Edit .env with your test Discord token and set GRUGBOT_VARIANT=dev
     ```
 
-5.  **Wake Grug Up for Testing:**
+5.  **Run Bot:**
     ```bash
     python bot.py
     ```
 
-## Sharpen Grug's Spear (Running Tests)
+## Testing
 
-Before you send your changes, make sure Grug's spear is sharp. Run the tests:
+Ensure all tests pass before submitting changes:
 
 ```bash
+# Run all tests
 PYTHONPATH=. pytest
+
+# Run specific test categories
+PYTHONPATH=. pytest tests/test_bot.py          # Bot functionality
+PYTHONPATH=. pytest tests/test_personality.py # Personality engine
+PYTHONPATH=. pytest tests/test_integration.py # End-to-end tests
+
+# Quick test run
+PYTHONPATH=. pytest -q
 ```
 
-## Make Grug's Words Clean (Linting)
+**Test Coverage**: All 44 tests should pass (100% success rate)
 
-Grug likes clean words. Make sure your code follows Grug's style:
+## Code Quality
+
+Maintain code quality with linting and formatting:
 
 ```bash
+# Check for issues
 ruff check .
+
+# Auto-fix issues
+ruff check . --fix
+
+# Format code
 ruff format .
+
+# Complete development check
+ruff check . --fix && ruff format . && PYTHONPATH=. pytest
 ```
 
-## How to Give Grug Your Work (Pull Request)
+## Contributing Process
 
-1.  **Make Your Own Branch:** Make a new path for your work.
-    ```bash
-    git checkout -b my-new-grug-feature
-    ```
+### 1. Create Feature Branch
+```bash
+git checkout -b feature/your-feature-name
+```
 
-2.  **Do Your Work:** Make Grug stronger, fix Grug, or teach Grug new tricks.
+### 2. Make Your Changes
+- Follow existing code patterns and personality engine architecture
+- Add comprehensive tests for new functionality
+- Update documentation if needed
 
-3.  **Make Small, Clear Marks (Commits):** Each mark should be one small change. Tell Grug what you did.
-    ```bash
-    git add .
-    git commit -m "feat: Grug learn new trick (short message)"
-    ```
+### 3. Commit Changes
+Use clear, descriptive commit messages:
+```bash
+git add .
+git commit -m "feat: Add new personality template system"
+git commit -m "fix: Resolve memory leak in response cache"
+git commit -m "docs: Update deployment guide with Docker variants"
+```
 
-4.  **Send Your Work to the Big Rock Pile:**
-    ```bash
-    git push origin my-new-grug-feature
-    ```
+### 4. Test Everything
+```bash
+# Run full test suite
+ruff check . --fix && ruff format . && PYTHONPATH=. pytest
+```
 
-5.  **Ask Chief to See Your Work (Pull Request):** Go to the big rock pile (GitHub) and make a new Pull Request. Tell the chief what your work does and why Grug needs it.
+### 5. Push Changes
+```bash
+git push origin feature/your-feature-name
+```
 
-Thank you for helping Grug!
+### 6. Create Pull Request
+- Provide clear description of changes and motivation
+- Reference any related issues
+- Include test results and any breaking changes
+
+## Development Guidelines
+
+### Personality System
+- New personality templates should extend the existing PersonalityTemplate class
+- Maintain personality isolation between Discord servers
+- Follow evolution stage progression (Initial → Developing → Established → Evolved)
+
+### Code Style
+- Follow existing patterns for Discord command handling
+- Use personality-aware responses throughout the bot
+- Maintain backward compatibility when possible
+- Add comprehensive docstrings for new methods
+
+### Testing
+- Write unit tests for individual components
+- Add integration tests for Discord interactions
+- Ensure all new features have test coverage
+- Mock heavy dependencies appropriately
+
+### Documentation
+- Update relevant .md files for new features
+- Include examples in personality documentation
+- Update deployment guides for new configuration options
+
+## Types of Contributions
+
+### Features
+- New personality templates
+- Enhanced evolution mechanics
+- Additional Discord commands
+- Performance optimizations
+
+### Bug Fixes
+- Personality system bugs
+- Discord interaction issues
+- Memory leaks or performance problems
+- Test failures
+
+### Documentation
+- API documentation improvements
+- Deployment guide updates
+- Example additions
+- Troubleshooting guides
+
+### Infrastructure
+- CI/CD improvements
+- Docker optimization
+- Dependency updates
+- Security enhancements
+
+Thank you for contributing to GrugThink! 🚀

@@ -1,115 +1,318 @@
-# How to Send Grug to New Caves (Deployment)
+# GrugThink Deployment Guide
 
-This stone tells how to make Grug live in a new cave (server). Grug needs a magic box (Docker) to live in. This keeps Grug safe and strong.
+**Deploy your personality-evolving Discord bot to production environments**
 
-## Quick Start: `docker-compose` (Easy Way)
+This guide covers deploying GrugThink using Docker with multiple optimization options, from lightweight 401MB images to full-featured 1.3GB deployments.
 
-This is the best way to wake Grug. It uses the `docker-compose.yml` magic scroll.
+## 🚀 Quick Start: Docker Compose (Recommended)
 
-1.  **Get Grug's Code:**
-    ```bash
-    git clone https://github.com/githumps/grugthink.git
-    cd grug-think
-    ```
+### Prerequisites
+- Docker and Docker Compose installed
+- Discord bot token
+- Gemini API key or Ollama instance
 
-2.  **Tell Grug Secrets:**
-    *   Copy `.env.example` to `.env`.
-    *   Fill `.env` with your secrets. You need `DISCORD_TOKEN` and a thinking spirit (like `GEMINI_API_KEY`).
-    *   **Important**: Set `GRUGBOT_DATA_DIR=/data` in your `.env` file. This tells Grug to use the safe place for his brain.
+### Deployment Steps
 
-3.  **Make Brain Cave:**
-    ```bash
-    mkdir grug-data
-    ```
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/githumps/grugthink.git
+   cd grugthink
+   ```
 
-4.  **Wake Grug Up:**
-    ```bash
-    docker-compose up -d
-    ```
+2. **Configure Environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your tokens and configuration
+   ```
 
-Grug is now alive! To put Grug to sleep, use `docker-compose down`.
+3. **Create Data Directory**:
+   ```bash
+   mkdir grug-data
+   ```
 
-## One-Liner `docker run` (Hard Way)
+4. **Choose Deployment Type**:
+   
+   **Lightweight (Recommended - 401MB)**:
+   ```bash
+   docker-compose -f docker-compose.dev.yml --profile lite up -d
+   ```
+   
+   **Production with Semantic Search (1.06GB)**:
+   ```bash
+   docker-compose -f docker-compose.dev.yml --profile optimized up -d
+   ```
+   
+   **Standard Deployment**:
+   ```bash
+   docker-compose up -d
+   ```
 
-If you no have `docker-compose`, you can use this long magic spell.
+5. **Verify Deployment**:
+   ```bash
+   docker-compose logs -f
+   ```
 
+### Stop and Update
 ```bash
-docker run -d --name grug-bot --env-file .env -v "$(pwd)/grug-data:/data" ghcr.io/grugthink/grugthink:latest
+# Stop bot
+docker-compose down
+
+# Update and restart
+git pull
+docker-compose pull
+docker-compose up -d
 ```
 
-*   This assumes you have a `.env` file with secrets and a `grug-data` folder in the same place.
+## 🐳 Docker Run (Manual)
 
-## How Grug is Made (Release Process)
+If you prefer direct Docker commands:
 
-The tribe chief (author) makes new versions of Grug when Grug learns new tricks. There are two kinds of Grug: **practice Grug** and **great hunt Grug**.
+**Lightweight Version**:
+```bash
+docker run -d \
+  --name grugthink-lite \
+  --env-file .env \
+  -e LOAD_EMBEDDER=False \
+  -v "$(pwd)/grug-data:/data" \
+  ghcr.io/githumps/grugthink:latest-lite
+```
 
-### Practice Grug (Test & Preview Releases)
+**Full Version**:
+```bash
+docker run -d \
+  --name grugthink \
+  --env-file .env \
+  -v "$(pwd)/grug-data:/data" \
+  ghcr.io/githumps/grugthink:latest
+```
 
-Before the great hunt, Grug must practice. You make a test Grug to see if he is strong. These are not for other tribes, only for you to test in your own cave.
+## 🏗️ Build from Source
 
-1.  **Make a Test Box (Test Build):**
-    *   Build a magic box with your new code. You can call it `grug-think:test`.
-    ```bash
-    docker build -t grug-think:test .
-    ```
-    *   Now you can run this test Grug using the `docker-compose.yml` file. Just change the `image` line to `grug-think:test`.
+### Development Build
+```bash
+# Lightweight build (fast)
+docker build -f Dockerfile.lite -t grugthink:lite .
 
-2.  **Make a Preview Grug (Pre-release):**
-    *   Sometimes, the chief wants to show a new Grug before he is ready for the great hunt. This is a preview Grug.
-    *   To make one, you make a special mark with `-rc` (Release Candidate) at the end, like `v1.1.0-rc1`.
-    ```bash
-    git tag -a v1.1.0-rc1 -m "Grug practice for next great hunt."
-    git push origin v1.1.0-rc1
-    ```
-    *   The magic spirit (GitHub Actions) will see this and build a special Grug box. It will be on the GitHub Packages page, but it will not be marked as `latest`. It is a preview for the brave.
+# Optimized build (balanced)
+docker build -f Dockerfile.optimized -t grugthink:optimized .
 
-### Great Hunt Grug (Official Versioned Releases)
+# Full build (complete features)
+docker build -f Dockerfile -t grugthink:full .
+```
 
-When Grug is strong and ready for all tribes, you make an official Grug. This is a great event.
+### Size Comparison
+```bash
+# Build all variants and compare
+./build-docker.sh
+```
 
-1.  **Check Grug's Work:** Make sure Grug is strong. All new code must be on the `main` branch. Run the tests one last time.
-    *   **Make Magic Air:**
-        ```bash
-        python3.11 -m venv venv
-        ```
-    *   **Wake Up Magic Air:**
-        ```bash
-        source venv/bin/activate
-        ```
-    *   **Get Tools:**
-        ```bash
-        pip install -r requirements.txt -r requirements-dev.txt
-        ```
-    *   **Run Tests:**
-        ```bash
-        PYTHONPATH=. pytest
-        ```
+Expected results:
+- **Lite**: ~401MB (no ML dependencies)
+- **Optimized**: ~1.06GB (ML with cleanup)
+- **Original**: ~1.31GB (full development)
 
-2.  **Make the Official Mark (Git Tag):**
-    *   Grug must be marked with a special tag like `v1.0.0` to show he is ready.
-    ```bash
-    git tag -a v1.0.0 -m "Grug Version 1. Grug is ready for the great hunt."
-    git push origin v1.0.0
-    ```
+## ⚙️ Configuration
 
-3.  **Magic Spirit Does the Rest (GitHub Actions):**
-    *   When you push a tag like `v1.0.0`, the magic spirit (GitHub Actions) will automatically:
-        *   Create a GitHub Release.
-        *   Build the official magic box.
-        *   Push the box to GitHub Packages with two names: `ghcr.io/githumps/grugthink:v1.0.0` and `ghcr.io/githumps/grugthink:latest`.
+### Required Environment Variables
 
-## Grug's Secrets (`.env` file)
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DISCORD_TOKEN` | Discord bot token | `your_discord_token_here` |
+| `GEMINI_API_KEY` | Gemini API key (OR configure Ollama) | `your_gemini_key_here` |
+| `TRUSTED_USER_IDS` | Discord user IDs for `/learn` command | `123456789,987654321` |
 
-Grug needs secrets to know how to think and talk. You put these secrets in a file called `.env`.
+### Optional Configuration
 
-| Secret Name          | What It Do                                                              |
-| -------------------- | ----------------------------------------------------------------------- |
-| `DISCORD_TOKEN`      | Magic key to let Grug into the Discord cave. **(Required)**             |
-| `GRUGBOT_VARIANT`    | `prod` for real Grug, `dev` for test Grug.                               |
-| `TRUSTED_USER_IDS`   | Who can teach Grug new things. List of user IDs, separated by commas.   |
-| `LOG_LEVEL`          | How much Grug talks to himself. `INFO` is normal, `DEBUG` is a lot.     |
-| `GEMINI_API_KEY`     | Magic key for Google's thinking spirit.                                 |
-| `OLLAMA_URLS`        | Where your own thinking spirits live. Can be many, separated by commas. |
-| `GOOGLE_API_KEY`     | Magic key for the magic talking rock (Google Search).                   |
-| `GOOGLE_CSE_ID`      | Magic ID for the magic talking rock.                                    |
-| `GRUGBOT_DATA_DIR`   | Where Grug keeps his brain. **Set to `/data` for Docker.**              |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOAD_EMBEDDER` | `True` | Enable semantic search (set `False` for lite) |
+| `GRUGBOT_VARIANT` | `prod` | Bot variant (`prod` or `dev`) |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`) |
+| `GRUGBOT_DATA_DIR` | `.` | Data directory (use `/data` in Docker) |
+
+### Search and AI Configuration
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GOOGLE_API_KEY` | Google Search API key (optional) | `your_google_api_key` |
+| `GOOGLE_CSE_ID` | Google Custom Search Engine ID | `your_cse_id` |
+| `OLLAMA_URLS` | Ollama server URLs (comma-separated) | `http://localhost:11434` |
+| `OLLAMA_MODELS` | Ollama models to use | `llama3.2:3b,mixtral` |
+
+### Example .env File
+```bash
+# Required
+DISCORD_TOKEN=your_discord_token_here
+GEMINI_API_KEY=your_gemini_api_key_here
+TRUSTED_USER_IDS=123456789,987654321
+
+# Docker configuration
+GRUGBOT_DATA_DIR=/data
+
+# Optional features
+LOAD_EMBEDDER=True
+GOOGLE_API_KEY=your_google_api_key
+GOOGLE_CSE_ID=your_cse_id
+
+# Logging
+LOG_LEVEL=INFO
+GRUGBOT_VARIANT=prod
+```
+
+## 🔄 Release Management
+
+### Automated Releases
+
+GrugThink uses GitHub Actions for automated builds and releases:
+
+1. **Development Builds**: Automatic builds on every push to `main`
+2. **Release Candidates**: Tagged pre-releases (`v1.1.0-rc1`)
+3. **Stable Releases**: Tagged stable releases (`v1.1.0`)
+
+### Creating a Release
+
+**Pre-release (Beta Testing)**:
+```bash
+git tag -a v2.1.0-rc1 -m "Release candidate for v2.1.0"
+git push origin v2.1.0-rc1
+```
+
+**Stable Release**:
+```bash
+# Ensure main branch is ready
+git checkout main
+git pull origin main
+
+# Run tests
+PYTHONPATH=. pytest
+
+# Create release tag
+git tag -a v2.1.0 -m "Release v2.1.0: Enhanced personality system"
+git push origin v2.1.0
+```
+
+GitHub Actions will automatically:
+- Build Docker images for all variants
+- Push to GitHub Container Registry
+- Create GitHub release with changelogs
+- Update `latest` tags
+
+### Image Tags
+
+| Tag Pattern | Description | Example |
+|-------------|-------------|---------|
+| `latest` | Latest stable release | `ghcr.io/githumps/grugthink:latest` |
+| `latest-lite` | Latest lightweight build | `ghcr.io/githumps/grugthink:latest-lite` |
+| `latest-optimized` | Latest optimized build | `ghcr.io/githumps/grugthink:latest-optimized` |
+| `v2.1.0` | Specific version | `ghcr.io/githumps/grugthink:v2.1.0` |
+| `v2.1.0-rc1` | Release candidate | `ghcr.io/githumps/grugthink:v2.1.0-rc1` |
+
+## 🔧 Production Considerations
+
+### Resource Requirements
+
+| Deployment Type | RAM | CPU | Storage | Network |
+|-----------------|-----|-----|---------|---------|
+| **Lite** | 128MB | 0.1 CPU | 1GB | Low |
+| **Optimized** | 1GB | 0.5 CPU | 2GB | Medium |
+| **Full** | 2GB | 1 CPU | 3GB | Medium |
+
+### Security
+
+- **Environment Variables**: Store sensitive data in `.env` files, not in code
+- **Volume Permissions**: Ensure Docker has write access to data directory
+- **Network**: Bot only needs outbound HTTPS access (Discord, APIs)
+- **Updates**: Regularly update to latest stable releases
+
+### Monitoring
+
+**Health Check**:
+```bash
+# Check if bot is responding
+docker-compose ps
+docker-compose logs --tail 50
+```
+
+**Resource Usage**:
+```bash
+# Monitor resource consumption
+docker stats grugthink
+```
+
+**Logs**:
+```bash
+# View logs
+docker-compose logs -f grugthink
+
+# Export logs
+docker-compose logs grugthink > grugthink.log
+```
+
+### Backup and Recovery
+
+**Data Backup**:
+```bash
+# Backup personality and knowledge data
+tar -czf grugthink-backup-$(date +%Y%m%d).tar.gz grug-data/
+```
+
+**Restore from Backup**:
+```bash
+# Stop bot
+docker-compose down
+
+# Restore data
+tar -xzf grugthink-backup-YYYYMMDD.tar.gz
+
+# Restart bot
+docker-compose up -d
+```
+
+### Scaling
+
+For multiple servers or high load:
+
+1. **Use lightweight images** to reduce resource usage
+2. **Disable semantic search** (`LOAD_EMBEDDER=False`) if not needed
+3. **Monitor memory usage** - each server gets its own personality/database
+4. **Consider horizontal scaling** with multiple bot instances for different server groups
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+**Bot won't start**:
+```bash
+# Check logs for errors
+docker-compose logs grugthink
+
+# Verify environment variables
+docker-compose config
+```
+
+**Permission errors**:
+```bash
+# Fix data directory permissions
+sudo chown -R $(id -u):$(id -g) grug-data/
+```
+
+**Memory issues**:
+```bash
+# Switch to lite version
+docker-compose -f docker-compose.dev.yml --profile lite up -d
+```
+
+**API rate limits**:
+- Check Discord token is valid
+- Verify Gemini API key has quota
+- Monitor usage in respective dashboards
+
+### Support
+
+- **Documentation**: Check other `.md` files in the repository
+- **Issues**: Create GitHub issues for bugs or feature requests
+- **Logs**: Always include relevant log output when reporting issues
+
+---
+
+**Ready to deploy your evolving Discord personality? Choose your deployment type and get started!** 🚀

@@ -1,29 +1,56 @@
-# Grug's Security Cave (Security Policy)
+# Security Policy
 
-Grug wants his cave to be safe for all. If you find a bad spirit (security vulnerability) in Grug's code, please tell Grug chief (project maintainer) right away.
+We take the security of GrugThink seriously. If you discover a security vulnerability, please report it responsibly so we can address it promptly.
 
-## How to Tell Grug About Bad Spirits
+## Reporting Security Vulnerabilities
 
-Do NOT tell Grug about bad spirits in public. Do NOT make a new issue on the big rock pile (GitHub Issues).
+**Please do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, send a secret message to the chief.
+Instead, please report security vulnerabilities by emailing the project maintainers directly or using GitHub's private security advisory feature.
 
-## What to Tell Grug
+## Vulnerability Report Guidelines
 
-When you send the secret message, tell Grug these things:
+When reporting a security vulnerability, please include:
 
-*   **Where the bad spirit lives:** Which part of Grug's code has the problem.
-*   **How the bad spirit works:** Steps to make the bad spirit appear.
-*   **What the bad spirit does:** How it hurts Grug or other cavemen.
-*   **Your name (optional):** If you want Grug to know who found the bad spirit.
+*   **Location:** Which component or file contains the vulnerability
+*   **Description:** Clear explanation of the vulnerability and potential impact
+*   **Reproduction Steps:** Step-by-step instructions to reproduce the issue
+*   **Proof of Concept:** If possible, provide a minimal example demonstrating the vulnerability
+*   **Suggested Fix:** If you have ideas for remediation, please include them
 
-## What Grug Will Do
+## Security Response Process
 
-Grug chief will:
+Our security response process:
 
-1.  Tell you Grug got your message in two sunrises.
-2.  Look at the bad spirit and see how strong it is.
-3.  Fix the bad spirit quickly.
-4.  Tell you when the bad spirit is gone.
+1.  **Acknowledgment:** We will acknowledge receipt of your report within 48 hours
+2.  **Assessment:** We will assess the vulnerability and determine its severity
+3.  **Fix Development:** We will develop and test a fix for the vulnerability
+4.  **Disclosure:** We will coordinate disclosure with you and provide credit if desired
 
-Grug thanks you for helping keep the cave safe!
+## Security Considerations in GrugThink
+
+### Data Protection
+- **User Privacy**: User IDs are logged instead of usernames to protect privacy
+- **Content Security**: Message content lengths are logged instead of actual content
+- **Token Security**: All API tokens and secrets must be stored in environment variables
+
+### Bot Security
+- **Permission Isolation**: Each Discord server maintains isolated personality and fact databases
+- **Rate Limiting**: Built-in rate limiting prevents abuse of verification commands
+- **Input Validation**: All user inputs are validated and sanitized before processing
+
+### Deployment Security
+- **Environment Variables**: Sensitive configuration stored in .env files (never committed)
+- **Docker Security**: Multi-stage builds minimize attack surface in production images
+- **Dependencies**: Regular dependency updates to address known vulnerabilities
+
+### API Security
+- **Authentication**: Proper API key validation for Gemini and Google Search APIs
+- **Network Security**: All external API calls use HTTPS encryption
+- **Error Handling**: Error messages don't expose sensitive system information
+
+## Security Updates
+
+Security fixes will be released as soon as possible after confirmation. Critical vulnerabilities may result in emergency releases outside the normal release schedule.
+
+Thank you for helping keep GrugThink secure! 🔒
