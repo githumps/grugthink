@@ -34,7 +34,7 @@ jobs:
           ruff format .
 
       - name: Grug sharpen spear (Run Tests)
-        run: PYTHONPATH=. pytest
+        run: PYTHONPATH=. TESTING=true pytest
 
       - name: Grug check tools for bad spirits (Dependency Scan with pip-audit)
         run: pip-audit --ignore-vuln GHSA-887c-mr87-cxwp
