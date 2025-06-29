@@ -118,6 +118,119 @@ This transformation represents a complete architectural evolution from a single-
 
 ---
 
+## Session: 2025-06-29 - Auto-Verification on Name Mention
+
+### Enhancement: Conversational Auto-Verification Feature ✅
+
+**Issue**: User requested the bot to automatically respond with true/false verification when someone mentions the bot's name in a message.
+
+### Changes Made ✅
+
+#### 1. Added Message Event Handler (`bot.py`)
+- **New Event**: `on_message()` handler to process all incoming messages
+- **Name Detection**: Intelligent bot name detection with multiple trigger patterns
+- **Command Compatibility**: Preserves existing slash command functionality via `client.process_commands()`
+
+#### 2. Smart Name Detection System
+- **Function**: `is_bot_mentioned()` with sophisticated pattern matching
+- **Direct Names**: Detects personality names (e.g., "Grug", "Thog", evolved names)
+- **Common Nicknames**: Recognizes "grug", "grugthink" with word boundaries
+- **Bot Addressing**: Detects "bot," "bot!" "bot?" for direct addressing
+- **@Mentions**: Handles Discord user mentions `<@123>` and `<@!123>`
+- **False Positive Prevention**: Uses word boundaries to avoid matches in "robots", "about", etc.
+
+#### 3. Auto-Verification Processing
+- **Function**: `handle_auto_verification()` with full verification pipeline
+- **Rate Limiting**: Respects existing cooldowns with personality-appropriate messages
+- **Content Cleaning**: Removes bot names and mentions to extract the actual statement
+- **Smart Responses**: 
+  - Short/empty content → Personality acknowledgment ("Grug hear you call!")
+  - Valid statements → Full verification with thinking message
+  - Errors → Personality-appropriate error messages
+
+#### 4. Enhanced User Experience
+- **Personality Integration**: All responses use server-specific personality styles
+- **Visual Feedback**: Thinking messages that edit to show final results
+- **Emoji Indicators**: 🤔 for verification, ❓ for errors, 💥 for failures
+- **Rate Limit Messages**: Auto-delete after 5 seconds to reduce clutter
+
+#### 5. Updated Help Documentation
+- **Help Command**: Added auto-verification section with personality-specific instructions
+- **Examples**: Shows users how to trigger auto-verification naturally
+
+#### 6. Comprehensive Testing ✅
+- **Unit Tests**: Name detection with various patterns and edge cases
+- **Integration Tests**: Full message handling workflow
+- **Rate Limiting Tests**: Proper cooldown behavior
+- **Content Processing Tests**: Short content handling and acknowledgments
+- **All Tests Pass**: 42/42 tests passing (100% success rate)
+
+### Technical Implementation Details ✅
+
+#### Message Processing Flow
+1. **Message Received** → Check if from bot (ignore if yes)
+2. **Process Commands** → Handle slash commands first
+3. **Name Detection** → Check if bot name is mentioned
+4. **Auto-Verification** → If mentioned, process the statement
+5. **Response** → Send personality-appropriate result
+
+#### Name Detection Examples
+```python
+# Direct mentions (word boundaries)
+"Hey Grug, is the sky blue?" → ✅ Triggers
+"I love debugging programs" → ❌ No trigger ("grug" not at word boundary)
+
+# Addressing patterns
+"bot, verify this" → ✅ Triggers  
+"robots are cool" → ❌ No trigger (not addressing)
+
+# @Mentions
+"<@123456> what do you think?" → ✅ Triggers
+```
+
+#### Personality Response Examples
+```python
+# Grug (caveman style)
+Short: "Grug hear you call!"
+Thinking: "Grug thinking..."
+Error: "Grug brain hurt. No can answer."
+
+# Big Rob (british_working_class)
+Short: "Alright mate, what's the story?"
+Rate limit: "Hold your horses, mate."
+Thinking: "Big Rob thinking..."
+
+# Adaptive (neutral)
+Short: "I'm listening. What would you like me to verify?"
+Thinking: "Adaptive thinking..."
+```
+
+### Benefits ✅
+- **Natural Conversation**: Users can talk to the bot naturally instead of using slash commands
+- **Personality Integration**: Auto-verification fully respects personality evolution and styles
+- **Seamless Experience**: Works alongside existing slash commands without conflicts
+- **Rate Limiting**: Prevents spam while maintaining conversational flow
+- **Error Handling**: Graceful failures with personality-appropriate messaging
+
+### Usage Examples ✅
+```
+User: "Grug, the earth is round"
+Bot: "Grug thinking..." → "🤔 TRUE - Grug know earth is big round rock, simple as!"
+
+User: "@GrugBot Paris is the capital of France"  
+Bot: "Grug thinking..." → "🤔 TRUE - Grug remember about big cave city across water."
+
+User: "Hey bot! Is water wet?"
+Bot: "Grug thinking..." → "🤔 TRUE - Grug touch water, very wet thing!"
+
+User: "Grug hi there"
+Bot: "Grug hear you call!"
+```
+
+This enhancement transforms GrugThink from a command-based bot to a truly conversational AI that responds naturally when addressed, while maintaining all existing functionality and personality system integrity!
+
+---
+
 ## Session: 2025-06-28 (Update 2) - Remove Models from Repo and Enable External Download
 
 ### Problem Identified

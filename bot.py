@@ -349,6 +349,138 @@ async def on_guild_join(guild):
     )
 
 
+@client.event
+async def on_message(message):
+    """Handle incoming messages and detect name mentions for auto-verification."""
+    # Ignore messages from bots
+    if message.author.bot:
+        return
+
+    # Process commands first
+    await client.process_commands(message)
+
+    # Get personality for this server
+    server_id = str(message.guild.id) if message.guild else "dm"
+    personality = personality_engine.get_personality(server_id)
+    bot_name = personality.chosen_name or personality.name
+
+    # Check if bot name is mentioned in the message
+    if is_bot_mentioned(message.content, bot_name):
+        await handle_auto_verification(message, server_id, personality)
+
+
+def is_bot_mentioned(content: str, bot_name: str) -> bool:
+    """Check if the bot name is mentioned in the message content."""
+    content_lower = content.lower()
+    bot_name_lower = bot_name.lower()
+
+    # Check for direct name mentions (word boundaries)
+    if re.search(rf"\b{re.escape(bot_name_lower)}\b", content_lower):
+        return True
+
+    # Check for common variations and nicknames (word boundaries)
+    common_names = ["grug", "grugthink"]
+    for name in common_names:
+        if re.search(rf"\b{name}\b", content_lower):
+            return True
+
+    # Check for "bot" but only when directly addressing (with punctuation)
+    if re.search(r"\bbot[,!?.\s]", content_lower):
+        return True
+
+    # Check for @mentions of the bot user
+    if client.user and f"<@{client.user.id}>" in content:
+        return True
+    if client.user and f"<@!{client.user.id}>" in content:
+        return True
+
+    return False
+
+
+async def handle_auto_verification(message, server_id: str, personality):
+    """Handle automatic verification when bot name is mentioned."""
+    # Rate limiting check
+    if is_rate_limited(message.author.id):
+        # Send a brief rate limit message
+        if personality.response_style == "caveman":
+            await message.channel.send("Grug need rest. Wait little.", delete_after=5)
+        elif personality.response_style == "british_working_class":
+            await message.channel.send("Hold your horses, mate.", delete_after=5)
+        else:
+            await message.channel.send("Please wait a moment.", delete_after=5)
+        return
+
+    # Clean the message content for verification
+    clean_content = clean_statement(message.content)
+
+    # Remove bot name mentions to get the actual statement
+    bot_name = personality.chosen_name or personality.name
+    for name_variant in [bot_name.lower(), "grug", "grugthink", "bot"]:
+        clean_content = re.sub(rf"\b{re.escape(name_variant)}\b", "", clean_content, flags=re.IGNORECASE)
+
+    # Remove @mentions
+    if client.user:
+        clean_content = clean_content.replace(f"<@{client.user.id}>", "")
+        clean_content = clean_content.replace(f"<@!{client.user.id}>", "")
+
+    # Clean up extra whitespace
+    clean_content = re.sub(r"\s+", " ", clean_content).strip()
+
+    # Skip if the remaining content is too short or just punctuation
+    if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):
+        # Respond with a personality-appropriate acknowledgment
+        if personality.response_style == "caveman":
+            response = f"{bot_name} hear you call!"
+        elif personality.response_style == "british_working_class":
+            response = "Alright mate, what's the story?"
+        else:
+            response = "I'm listening. What would you like me to verify?"
+
+        await message.channel.send(response)
+        return
+
+    # Send thinking message
+    bot_name_display = personality.chosen_name or personality.name
+    thinking_msg = f"{bot_name_display} thinking..."
+    thinking_message = await message.channel.send(thinking_msg)
+
+    try:
+        # Get the server-specific database
+        server_db = get_server_db(message.guild.id if message.guild else "dm")
+
+        # Run verification in executor to avoid blocking
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, query_model, clean_content, server_db, server_id)
+
+        if result:
+            # Apply personality style to response
+            styled_result = personality_engine.get_response_with_style(server_id, result)
+            await thinking_message.edit(content=f"🤔 {styled_result}")
+
+            log.info(
+                "Auto-verification completed",
+                extra={
+                    "user_id": str(message.author.id),
+                    "server_id": server_id,
+                    "statement_length": len(clean_content),
+                    "result_length": len(styled_result),
+                },
+            )
+        else:
+            # Use personality-appropriate error message
+            error_msg = personality_engine.get_error_message(server_id)
+            await thinking_message.edit(content=f"❓ {error_msg}")
+
+    except Exception as exc:
+        log.error(
+            "Auto-verification error",
+            extra={"error": str(exc), "user_id": str(message.author.id), "server_id": server_id},
+        )
+        # Use personality for error message
+        error_msg = personality_engine.get_error_message(server_id)
+        await thinking_message.edit(content=f"💥 {error_msg}")
+
+
 GRUGBOT_VARIANT = config.GRUGBOT_VARIANT
 verify_cmd_name = "verify-dev" if GRUGBOT_VARIANT == "dev" else "verify"
 
@@ -534,6 +666,15 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(name="/what-know", value="See all the facts I know.", inline=False)
     embed.add_field(name="/personality", value="See my personality info and evolution.", inline=False)
     embed.add_field(name="/help", value="Shows this help message.", inline=False)
+
+    # Add auto-verification feature description
+    auto_verify_desc = f"Say '{bot_name}' or '@{bot_name}' in a message with a statement to auto-verify it!"
+    if personality.response_style == "caveman":
+        auto_verify_desc = f"Say '{bot_name}' with statement and {bot_name} check truth!"
+    elif personality.response_style == "british_working_class":
+        auto_verify_desc = "Just mention me name with a statement and I'll check it for you, mate!"
+
+    embed.add_field(name="💬 Auto-Verification", value=auto_verify_desc, inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 

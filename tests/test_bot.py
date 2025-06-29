@@ -311,6 +311,108 @@ async def test_help_command(mock_interaction):
         assert kwargs["ephemeral"] is True
 
 
+# Test auto-verification name detection
+def test_is_bot_mentioned():
+    # Test direct name mentions
+    assert bot.is_bot_mentioned("Hey Grug, is the sky blue?", "Grug") is True
+    assert bot.is_bot_mentioned("grug tell me about the moon", "Grug") is True
+    assert bot.is_bot_mentioned("GRUG what do you think?", "Grug") is True
+
+    # Test evolved name mentions
+    assert bot.is_bot_mentioned("Hey Thog, is water wet?", "Thog") is True
+    assert bot.is_bot_mentioned("thog verify this please", "Thog") is True
+
+    # Test common nicknames
+    assert bot.is_bot_mentioned("bot, is this true?", "Grug") is True
+    assert bot.is_bot_mentioned("bot! verify this", "Grug") is True
+    assert bot.is_bot_mentioned("grugthink help me", "Grug") is True
+
+    # Test @mentions (mock client.user)
+    with patch.object(bot, "client") as mock_client:
+        mock_user = MagicMock()
+        mock_user.id = 12345
+        mock_client.user = mock_user
+        assert bot.is_bot_mentioned("Hey <@12345> check this", "Grug") is True
+        assert bot.is_bot_mentioned("Hey <@!12345> verify", "Grug") is True
+
+    # Test non-mentions
+    assert bot.is_bot_mentioned("This has nothing to do with bots", "Grug") is False
+    assert bot.is_bot_mentioned("Just regular conversation", "Thog") is False
+
+
+@pytest.mark.asyncio
+async def test_auto_verification_message_handling():
+    """Test the on_message event handler for auto-verification."""
+    mock_message = MagicMock()
+    mock_message.author.bot = False
+    mock_message.content = "Grug, the earth is round"
+    mock_message.guild.id = 12345
+
+    # Mock personality engine and client
+    with patch.object(bot, "personality_engine") as mock_personality_engine, patch.object(bot, "client") as mock_client:
+        # Setup personality mock
+        mock_personality = MagicMock()
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality.response_style = "caveman"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        # Setup client mock
+        mock_client.user = MagicMock()
+        mock_client.user.id = 99999
+        mock_client.process_commands = AsyncMock()
+
+        # Mock the verification process
+        with patch.object(bot, "handle_auto_verification") as mock_handle:
+            await bot.on_message(mock_message)
+            mock_handle.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_auto_verification_rate_limited():
+    """Test auto-verification respects rate limiting."""
+    mock_message = MagicMock()
+    mock_message.author.id = 12345
+    mock_message.channel.send = AsyncMock()
+
+    # Set up rate limiting
+    bot.user_cooldowns[12345] = time.time()
+
+    # Mock personality
+    mock_personality = MagicMock()
+    mock_personality.response_style = "caveman"
+
+    await bot.handle_auto_verification(mock_message, "12345", mock_personality)
+
+    # Should send rate limit message
+    mock_message.channel.send.assert_called_once()
+    args, kwargs = mock_message.channel.send.call_args
+    assert "Grug need rest" in args[0]
+    assert kwargs.get("delete_after") == 5
+
+
+@pytest.mark.asyncio
+async def test_auto_verification_short_content():
+    """Test auto-verification handles short content appropriately."""
+    mock_message = MagicMock()
+    mock_message.author.id = 99999  # Different ID to avoid rate limiting
+    mock_message.content = "Grug hi"
+    mock_message.channel.send = AsyncMock()
+
+    # Mock personality
+    mock_personality = MagicMock()
+    mock_personality.chosen_name = None
+    mock_personality.name = "Grug"
+    mock_personality.response_style = "caveman"
+
+    await bot.handle_auto_verification(mock_message, "12345", mock_personality)
+
+    # Should send acknowledgment instead of verification
+    mock_message.channel.send.assert_called_once()
+    args, _ = mock_message.channel.send.call_args
+    assert "Grug hear you call!" in args[0]
+
+
 # Test clean_statement
 def test_clean_statement():
     assert bot.clean_statement("hello <@123> world") == "hello world"
