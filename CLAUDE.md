@@ -17,13 +17,32 @@ pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ### Development Workflow
-Always update CLAUDELOG.md at the end of each change Claude does.
-Always update CLAUDE.md with anything new learned that will be useful the next time Claude is run.
-Always ensure any new code has proper tests that pass.
-Always ensure the Github workflows are updated to reflect any changes made.
-Always ensure the project will successfully work in Docker with the Dockerfile.
-Always ensure the project will build correctly when committed to Github and the automated Github Actions run to build and check.
-Always ensure all documentation and markdown files are updated with new project details such as if new commands exist, etc.
+YOU MUST update CLAUDELOG.md at the end of each change Claude does, keep it detailed.
+YOU MUST update CHANGELOG.md at the end of each change Claude does, keep it brief.
+YOU MUST update CLAUDE.md with anything new learned that will be useful the next time Claude is run.
+YOU MUST ensure any new code has proper tests that pass.
+YOU MUST ensure the Github workflows are updated to reflect any changes made.
+YOU MUST ensure the project will successfully work in Docker with ALL Dockerfiles (single bot and multi-bot).
+YOU MUST ensure the project will build correctly when committed to Github and the automated Github Actions run to build and check.
+YOU MUST ensure all documentation and markdown files are updated with new project details such as if new commands exist, etc.
+YOU MUST test new features in both single-bot and multi-bot container environments.
+
+### Multi-Bot Container Development
+When developing new features:
+- Test with multi-bot container: `docker-compose -f examples/docker-compose/development.yml up -d`
+- Access web dashboard at http://localhost:8080 for testing
+- Ensure changes work with both deployment methods
+- Update API endpoints in `src/grugthink/api_server.py` if needed
+- Add new bot templates to `src/grugthink/config_manager.py` if applicable
+
+### Project Structure (Updated)
+Following Python package best practices:
+- **Source Code**: `src/grugthink/` - Organized Python package
+- **Documentation**: `docs/` - All markdown documentation
+- **Docker**: `docker/` - Organized by deployment type
+- **Scripts**: `scripts/` - Setup and utility scripts
+- **Examples**: `examples/` - Configuration templates and examples
+- **Tests**: `tests/` - Comprehensive test suite
 
 #### Linting and Formatting
 ```bash
@@ -51,16 +70,21 @@ PYTHONPATH=. pytest -v
 
 ## Project Structure
 
-### Core Files
-- `bot.py` - Main Discord bot implementation
-- `config.py` - Configuration management and validation
-- `grug_db.py` - Database and vector search functionality
-- `grug_structured_logger.py` - Logging utilities
+### Core Files (Updated Structure)
+- `src/grugthink/bot.py` - Main Discord bot implementation
+- `src/grugthink/config.py` - Configuration management and validation
+- `src/grugthink/grug_db.py` - Database and vector search functionality
+- `src/grugthink/grug_structured_logger.py` - Logging utilities
+- `src/grugthink/personality_engine.py` - Multi-personality system
+- `src/grugthink/bot_manager.py` - Multi-bot orchestration
+- `src/grugthink/api_server.py` - REST API and web dashboard
+- `grugthink.py` - Main entry point
 
 ### Test Files
 - `tests/test_bot.py` - Discord bot functionality tests
 - `tests/test_config.py` - Configuration validation tests  
 - `tests/test_grug_db.py` - Database functionality tests
+- `tests/test_integration.py` - End-to-end Discord integration tests
 
 ### Configuration
 - `pyproject.toml` - Ruff linting configuration

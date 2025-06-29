@@ -25,7 +25,7 @@ try:
 except ImportError:
     SentenceTransformer = None
 
-from grug_structured_logger import get_logger
+from .grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 

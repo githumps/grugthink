@@ -43,10 +43,14 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy only necessary files (exclude tests, docs, etc)
-COPY bot.py config.py grug_db.py grug_structured_logger.py personality_engine.py ./
+# Copy source code with new structure
+COPY src/ ./src/
+COPY grugthink.py ./
 COPY requirements.txt ./
+
+# Set Python path for proper imports
+ENV PYTHONPATH=/app
 
 HEALTHCHECK CMD curl --fail http://localhost:8000/health || exit 1
 
-CMD ["python3", "bot.py"]
+CMD ["python3", "grugthink.py"]

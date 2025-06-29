@@ -1,0 +1,20 @@
+# Grug's home. Easy way to wake Grug.
+version: '3.8'
+
+services:
+  grug-bot:
+    # Official Grug from the great hunt.
+    # Find more versions on GitHub Packages page for this tribe's rock pile.
+    # Example: ghcr.io/githumps/grugthink:v1.0.0
+    image: ghcr.io/githumps/grugthink:latest
+    container_name: grug-bot
+    restart: unless-stopped
+    # Grug need his secrets to think.
+    env_file:
+      - .env
+    # Grug need place to keep his brain. This keeps brain safe if Grug's cave fall down.
+    # 1. Make a folder next to this file called 'grug-data'.
+    # 2. Make sure GRUGBOT_DATA_DIR in your .env file is set to '/data'.
+    #    Example: GRUGBOT_DATA_DIR=/data
+    volumes:
+      - ./grug-data:/data

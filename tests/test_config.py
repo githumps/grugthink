@@ -7,9 +7,9 @@ import pytest
 
 # Helper function to reload the config module
 def _reload_config():
-    if "config" in sys.modules:
-        del sys.modules["config"]
-    import config
+    if "src.grugthink.config" in sys.modules:
+        del sys.modules["src.grugthink.config"]
+    from src.grugthink import config
 
     return config
 

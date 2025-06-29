@@ -73,7 +73,7 @@ if "faiss" not in sys.modules:
     fake_faiss.read_index = read_index
     sys.modules["faiss"] = fake_faiss
 
-from grug_db import GrugDB
+from src.grugthink.grug_db import GrugDB
 
 
 @pytest.fixture(scope="function")

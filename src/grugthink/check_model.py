@@ -1,7 +1,7 @@
 import os
 import sys
 
-from grug_db import GrugDB
+from .grug_db import GrugDB
 
 # Add the current directory to PYTHONPATH for grug_db to be found
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

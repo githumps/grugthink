@@ -10,8 +10,9 @@ import sys
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from grug_db import download_model
-from grug_structured_logger import get_logger
+from .grug_db import download_model
+
+from .grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 

@@ -17,7 +17,7 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
-from grug_structured_logger import get_logger
+from .grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 
@@ -282,14 +282,31 @@ based on your experiences in this specific Discord server.""",
         """Create a new personality for a server."""
         # Check for forced personality via environment variable
         forced_personality = os.getenv("FORCE_PERSONALITY", "").lower()
-        
+
+        # Handle common aliases for personality names
+        personality_aliases = {
+            "big_rob": "bigrob",
+            "biggrob": "bigrob",
+            "rob": "bigrob"
+        }
+
+        # Resolve alias if needed
+        if forced_personality in personality_aliases:
+            resolved_personality = personality_aliases[forced_personality]
+            log.info(f"Resolved personality alias: {forced_personality} -> {resolved_personality}",
+                    extra={"server_id": server_id})
+            forced_personality = resolved_personality
+
         if forced_personality in self.templates:
             template_name = forced_personality
             log.info(f"Using forced personality: {template_name}", extra={"server_id": server_id})
         else:
+            if os.getenv("FORCE_PERSONALITY"):
+                log.warning(f"Invalid FORCE_PERSONALITY '{os.getenv('FORCE_PERSONALITY')}'. Available: {list(self.templates.keys())}",
+                           extra={"server_id": server_id})
             # Default to Grug template, but this could be randomized or user-selected
             template_name = "grug"  # TODO: Make this configurable or random
-            
+
         template = self.templates[template_name]
 
         personality = PersonalityState(

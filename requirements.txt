@@ -7,3 +7,10 @@ sentence-transformers>=2.2.2
 google-generativeai
 google-api-python-client
 setuptools>=78.1.1
+
+# Multi-bot container dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+watchdog>=3.0.0
+pyyaml>=6.0.1

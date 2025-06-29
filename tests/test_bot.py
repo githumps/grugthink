@@ -43,11 +43,11 @@ with (
             "grug_db": MagicMock(),  # Mock the entire grug_db module
         },
     ),
-    patch("bot.server_manager", _mock_server_manager),
-    patch("bot.query_model", _mock_query_model),
-    patch("grug_structured_logger.get_logger", return_value=mock_logger),
+    patch("src.grugthink.bot.server_manager", _mock_server_manager),
+    patch("src.grugthink.bot.query_model", _mock_query_model),
+    patch("src.grugthink.grug_structured_logger.get_logger", return_value=mock_logger),
 ):
-    import bot
+    from src.grugthink import bot
 
 
 # Mock Discord Interaction and related objects

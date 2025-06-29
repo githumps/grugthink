@@ -2,9 +2,34 @@
 
 **Deploy your personality-evolving Discord bot to production environments**
 
-This guide covers deploying GrugThink using Docker with multiple optimization options, from lightweight 401MB images to full-featured 1.3GB deployments.
+This guide covers both single bot deployments and the new multi-bot container system with web dashboard management.
 
-## 🚀 Quick Start: Docker Compose (Recommended)
+## 🔥 Multi-Bot Container (Latest - Recommended)
+
+**Deploy multiple bots with web management interface**:
+
+```bash
+# Clone repository
+git clone https://github.com/githumps/grugthink.git
+cd grugthink
+
+# Start multi-bot container with web dashboard
+docker-compose -f docker-compose.multibot.yml up -d
+
+# Access web dashboard
+open http://localhost:8080
+```
+
+**Features:**
+- Web dashboard for post-launch configuration
+- Multiple bot instances with different personalities
+- Real-time monitoring and management
+- Dynamic environment variable updates
+- Centralized API key management
+
+See **[MULTIBOT.md](MULTIBOT.md)** for complete multi-bot deployment guide.
+
+## 🚀 Single Bot Deployment
 
 ### Prerequisites
 - Docker and Docker Compose installed

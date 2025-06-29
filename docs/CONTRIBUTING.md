@@ -10,17 +10,25 @@ Thank you for your interest in contributing to GrugThink! This guide will help y
 
 ### Quick Setup Options
 
-**Lightweight Development (Recommended)**:
+**Multi-Bot Development (Latest)**:
 ```bash
-chmod +x setup-codex.sh
-./setup-codex.sh
+# Start multi-bot container for development
+docker-compose -f examples/docker-compose/development.yml up -d
+# Access web dashboard at http://localhost:8080
+```
+*Includes web dashboard, live code reload, and multiple bot instances*
+
+**Lightweight Development**:
+```bash
+chmod +x scripts/setup-codex.sh
+./scripts/setup-codex.sh
 ```
 *Uses mocked ML dependencies for fast testing*
 
 **Full Development Environment**:
 ```bash
-chmod +x setup.sh
-./setup.sh
+chmod +x scripts/setup.sh
+./scripts/setup.sh
 ```
 *Includes semantic search capabilities*
 
@@ -51,7 +59,11 @@ chmod +x setup.sh
 
 5.  **Run Bot:**
     ```bash
-    python bot.py
+    # Single bot mode
+    python grugthink.py
+    
+    # Multi-bot container mode  
+    python grugthink.py multi-bot
     ```
 
 ## Testing
@@ -129,6 +141,13 @@ git push origin feature/your-feature-name
 - Include test results and any breaking changes
 
 ## Development Guidelines
+
+### Multi-Bot Container System
+- Test changes in multi-bot environment: `docker-compose -f examples/docker-compose/development.yml up -d`
+- Use web dashboard at http://localhost:8080 for testing different bot configurations
+- Ensure new features work with both single and multi-bot deployments
+- Follow REST API patterns in `src/grugthink/api_server.py` for new endpoints
+- Update bot templates in `src/grugthink/config_manager.py` for new personality options
 
 ### Personality System
 - New personality templates should extend the existing PersonalityTemplate class

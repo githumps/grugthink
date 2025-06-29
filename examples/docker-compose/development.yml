@@ -1,0 +1,22 @@
+# Example: Development Environment
+version: '3.8'
+
+services:
+  grugthink-dev:
+    build:
+      context: ../../
+      dockerfile: docker/multi-bot/Dockerfile.multibot
+    container_name: grugthink-dev
+    ports:
+      - "8080:8080"  # Web dashboard
+      - "5678:5678"  # Debug port
+    volumes:
+      - ../../src:/app/src:rw  # Live code reload
+      - ../../data:/data:rw
+      - ../../examples/configs/grugthink_config.example.yaml:/app/grugthink_config.yaml:rw
+    environment:
+      - LOG_LEVEL=DEBUG
+      - GRUGBOT_DATA_DIR=/data
+      - GRUGBOT_VARIANT=dev
+      - PYTHONPATH=/app/src
+    restart: "no"  # Don't auto-restart in dev

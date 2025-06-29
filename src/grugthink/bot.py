@@ -19,10 +19,10 @@ import requests
 from discord import app_commands
 from discord.ext import commands
 
-import config
-from grug_db import GrugServerManager
-from grug_structured_logger import get_logger
-from personality_engine import PersonalityEngine
+from . import config
+from .grug_db import GrugServerManager
+from .grug_structured_logger import get_logger
+from .personality_engine import PersonalityEngine
 
 log = get_logger(__name__)
 
