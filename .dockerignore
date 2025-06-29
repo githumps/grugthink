@@ -1,0 +1,105 @@
+# Ignore large files and development artifacts to reduce Docker build context
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# Python virtual environment and caches
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Development and testing
+.pytest_cache/
+.coverage
+.tox/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large model files and data directories
+models/
+*.model
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Database files (should be mounted as volumes)
+*.db
+*.sqlite
+*.sqlite3
+grug-data/
+
+# Log files
+*.log
+logs/
+
+# Documentation (not needed in container)
+CLAUDELOG.md
+SETUP_COMPARISON.md
+AGENTS.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+DEPLOYMENT.md
+SECURITY.md
+LICENSE
+README.md
+DOCKER_OPTIMIZATION.md
+
+# Development scripts
+setup*.sh
+build-docker.sh
+check_*.py
+download_models.py
+
+# Docker files (avoid recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files (not needed in production)
+tests/
+conftest.py
+pytest.ini
+
+# Development requirements (keep requirements.txt and requirements-ci.txt)
+requirements-dev.txt
