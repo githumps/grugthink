@@ -231,6 +231,96 @@ This enhancement transforms GrugThink from a command-based bot to a truly conver
 
 ---
 
+## Session: 2025-06-29 (Update) - Markov Bot Interaction Support
+
+### Enhancement: Selective Bot-to-Bot Communication ✅
+
+**Issue**: User requested the bot to interact with Markov chain bots while still ignoring other bots to prevent spam.
+
+### Changes Made ✅
+
+#### 1. Selective Bot Filtering (`bot.py`)
+- **Modified Event**: `on_message()` handler now allows Markov bots through
+- **Bot Detection**: Checks if bot username contains "markov" (case-insensitive)
+- **Spam Prevention**: All other bots are still ignored
+
+#### 2. Special Markov Bot Responses
+- **Acknowledgments**: Different responses for bot vs human interactions
+  - Caveman: `"Grug hear robot friend call!"` vs `"Grug hear you call!"`
+  - Big Rob: `"alright robot mate, wot you sayin, nuff said"` vs `"wot you want mate, nuff said"`
+  - Adaptive: `"Hello fellow bot! What would you like me to verify?"` vs `"I'm listening. What would you like me to verify?"`
+
+#### 3. Bot-Aware Thinking Messages
+- **Caveman**: `"Grug think about robot friend words..."`
+- **Big Rob**: `"Big Rob checkin wot robot mate said..."`
+- **Adaptive**: `"Adaptive analyzing bot input..."`
+
+#### 4. Enhanced Logging
+- **Markov Detection**: Logs when interacting with Markov bots
+- **Interaction Tracking**: Records bot name, server ID, message length
+- **Completion Logging**: Tracks successful bot-to-bot verifications
+
+#### 5. Comprehensive Testing ✅
+- **Bot Filtering Tests**: Verifies Markov bots are processed, others ignored
+- **Special Response Tests**: Confirms different responses for bot interactions
+- **All Tests Pass**: 44/44 tests passing (100% success rate)
+
+### Technical Implementation Details ✅
+
+#### Bot Detection Logic
+```python
+# Allow Markov bots through, ignore all others
+if message.author.bot:
+    if "markov" not in message.author.name.lower():
+        return  # Ignore non-Markov bots
+```
+
+#### Response Examples
+```python
+# For Markov bots
+"Grug hear robot friend call!"
+"Big Rob checkin wot robot mate said..."
+"Hello fellow bot! What would you like me to verify?"
+
+# For humans  
+"Grug hear you call!"
+"Big Rob thinking..."
+"I'm listening. What would you like me to verify?"
+```
+
+#### Logging Examples
+```json
+{
+  "message": "Markov bot interaction",
+  "markov_bot_name": "MarkovChain_Bot",
+  "server_id": "12345",
+  "message_length": 42
+}
+```
+
+### Benefits ✅
+- **Selective Interaction**: Only responds to Markov bots, preventing spam from other bots
+- **Personality Awareness**: Bot interactions respect personality styles and evolution
+- **Enhanced Conversations**: Creates interesting bot-to-bot dynamics with Markov chains
+- **Spam Prevention**: Maintains protection against generic bot spam
+- **Logging Visibility**: Clear tracking of bot-to-bot interactions for monitoring
+
+### Usage Examples ✅
+```
+MarkovBot: "Grug, the weather today is quite nice indeed"
+Grug: "Grug think about robot friend words..." → "🤔 TRUE - Grug agree, nice day for hunt!"
+
+MarkovChain_User: "Big Rob, football is popular in England"  
+Big Rob: "Big Rob checkin wot robot mate said..." → "🤔 TRUE - wot i fink: footy is life in england, nuff said"
+
+RegularBot: "Grug, test message"
+(No response - RegularBot is ignored)
+```
+
+This enhancement enables interesting conversational dynamics with Markov chain bots while maintaining spam protection from other automated systems!
+
+---
+
 ## Session: 2025-06-28 (Update 2) - Remove Models from Repo and Enable External Download
 
 ### Problem Identified

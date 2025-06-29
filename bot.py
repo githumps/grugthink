@@ -352,9 +352,11 @@ async def on_guild_join(guild):
 @client.event
 async def on_message(message):
     """Handle incoming messages and detect name mentions for auto-verification."""
-    # Ignore messages from bots
+    # Ignore messages from bots, except for Markov bots
     if message.author.bot:
-        return
+        # Only allow interaction with bots whose username contains "Markov"
+        if "markov" not in message.author.name.lower():
+            return
 
     # Process commands first
     await client.process_commands(message)
@@ -399,13 +401,25 @@ def is_bot_mentioned(content: str, bot_name: str) -> bool:
 
 async def handle_auto_verification(message, server_id: str, personality):
     """Handle automatic verification when bot name is mentioned."""
+    # Log if this is a Markov bot interaction
+    is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
+    if is_markov_bot:
+        log.info(
+            "Markov bot interaction",
+            extra={
+                "markov_bot_name": message.author.name,
+                "server_id": server_id,
+                "message_length": len(message.content),
+            },
+        )
+
     # Rate limiting check
     if is_rate_limited(message.author.id):
         # Send a brief rate limit message
         if personality.response_style == "caveman":
             await message.channel.send("Grug need rest. Wait little.", delete_after=5)
         elif personality.response_style == "british_working_class":
-            await message.channel.send("Hold your horses, mate.", delete_after=5)
+            await message.channel.send("slow down mate, too much carlin last nite, simple as", delete_after=5)
         else:
             await message.channel.send("Please wait a moment.", delete_after=5)
         return
@@ -429,19 +443,38 @@ async def handle_auto_verification(message, server_id: str, personality):
     # Skip if the remaining content is too short or just punctuation
     if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):
         # Respond with a personality-appropriate acknowledgment
-        if personality.response_style == "caveman":
-            response = f"{bot_name} hear you call!"
-        elif personality.response_style == "british_working_class":
-            response = "Alright mate, what's the story?"
+        if is_markov_bot:
+            # Special responses for Markov bot interactions
+            if personality.response_style == "caveman":
+                response = f"{bot_name} hear robot friend call!"
+            elif personality.response_style == "british_working_class":
+                response = "alright robot mate, wot you sayin, nuff said"
+            else:
+                response = "Hello fellow bot! What would you like me to verify?"
         else:
-            response = "I'm listening. What would you like me to verify?"
+            # Normal human responses
+            if personality.response_style == "caveman":
+                response = f"{bot_name} hear you call!"
+            elif personality.response_style == "british_working_class":
+                response = "wot you want mate, nuff said"
+            else:
+                response = "I'm listening. What would you like me to verify?"
 
         await message.channel.send(response)
         return
 
     # Send thinking message
     bot_name_display = personality.chosen_name or personality.name
-    thinking_msg = f"{bot_name_display} thinking..."
+    if is_markov_bot:
+        if personality.response_style == "caveman":
+            thinking_msg = f"{bot_name_display} think about robot friend words..."
+        elif personality.response_style == "british_working_class":
+            thinking_msg = f"{bot_name_display} checkin wot robot mate said..."
+        else:
+            thinking_msg = f"{bot_name_display} analyzing bot input..."
+    else:
+        thinking_msg = f"{bot_name_display} thinking..."
+
     thinking_message = await message.channel.send(thinking_msg)
 
     try:
@@ -464,6 +497,8 @@ async def handle_auto_verification(message, server_id: str, personality):
                     "server_id": server_id,
                     "statement_length": len(clean_content),
                     "result_length": len(styled_result),
+                    "is_markov_bot": is_markov_bot,
+                    "author_name": message.author.name if is_markov_bot else None,
                 },
             )
         else:
@@ -555,7 +590,7 @@ async def learn(interaction: discord.Interaction, fact: str):
         if personality.response_style == "caveman":
             await interaction.followup.send(f"You not trusted to teach {bot_name}.", ephemeral=True)
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("Not having that from you, mate.", ephemeral=True)
+            await interaction.followup.send("oi oi, you aint on the list mate, end of", ephemeral=True)
         else:
             await interaction.followup.send("You're not authorized to teach me facts.", ephemeral=True)
         return
@@ -564,7 +599,7 @@ async def learn(interaction: discord.Interaction, fact: str):
         if personality.response_style == "caveman":
             await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("That's not much to go on, is it?", ephemeral=True)
+            await interaction.followup.send("wot? thats it? need more than that mate, simple as", ephemeral=True)
         else:
             await interaction.followup.send("Please provide a more detailed fact.", ephemeral=True)
         return
@@ -583,14 +618,14 @@ async def learn(interaction: discord.Interaction, fact: str):
         if personality.response_style == "caveman":
             await interaction.followup.send(f"{bot_name} learn: {fact}", ephemeral=True)
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send(f"Right, got that: {fact}", ephemeral=True)
+            await interaction.followup.send(f"sorted mate, learnt that: {fact}, nuff said", ephemeral=True)
         else:
             await interaction.followup.send(f"Learned: {fact}", ephemeral=True)
     else:
         if personality.response_style == "caveman":
             await interaction.followup.send(f"{bot_name} already know that.", ephemeral=True)
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("Already know that one, mate.", ephemeral=True)
+            await interaction.followup.send("already know that one, simple as", ephemeral=True)
         else:
             await interaction.followup.send("I already know that.", ephemeral=True)
 
@@ -612,7 +647,7 @@ async def what_know(interaction: discord.Interaction):
         if personality.response_style == "caveman":
             await interaction.followup.send(f"{bot_name} know nothing in this cave.", ephemeral=True)
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("Don't know anything yet, mate.", ephemeral=True)
+            await interaction.followup.send("dont know nuffin yet mate, simple as", ephemeral=True)
         else:
             await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
         return
@@ -627,8 +662,8 @@ async def what_know(interaction: discord.Interaction):
         title = f"{bot_name}'s Memories ({server_name})"
         description = f"{bot_name} knows {len(all_facts)} things in this cave:"
     elif personality.response_style == "british_working_class":
-        title = f"What I Know ({server_name})"
-        description = f"Got {len(all_facts)} things in me head:"
+        title = f"wot i know ({server_name})"
+        description = f"got {len(all_facts)} fings in me ed, nuff said:"
     else:
         title = f"Knowledge Base ({server_name})"
         description = f"I know {len(all_facts)} facts:"
@@ -654,8 +689,8 @@ async def help_command(interaction: discord.Interaction):
         title = f"{bot_name} Help"
         description = f"Here are the things {bot_name} can do:"
     elif personality.response_style == "british_working_class":
-        title = "What I Can Do"
-        description = "Right, here's what I'm good for:"
+        title = "wot i can do"
+        description = "right then, ere's wot im good for, simple as:"
     else:
         title = "Bot Help"
         description = "Here are my available commands:"
@@ -672,7 +707,7 @@ async def help_command(interaction: discord.Interaction):
     if personality.response_style == "caveman":
         auto_verify_desc = f"Say '{bot_name}' with statement and {bot_name} check truth!"
     elif personality.response_style == "british_working_class":
-        auto_verify_desc = "Just mention me name with a statement and I'll check it for you, mate!"
+        auto_verify_desc = "just say me name with summat and ill check it, simple as"
 
     embed.add_field(name="💬 Auto-Verification", value=auto_verify_desc, inline=False)
 

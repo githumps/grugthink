@@ -413,6 +413,72 @@ async def test_auto_verification_short_content():
     assert "Grug hear you call!" in args[0]
 
 
+@pytest.mark.asyncio
+async def test_markov_bot_interaction():
+    """Test that the bot responds to Markov bots but ignores other bots."""
+    # Test Markov bot (should be processed)
+    markov_message = MagicMock()
+    markov_message.author.bot = True
+    markov_message.author.name = "MarkovChain_Bot"
+    markov_message.content = "Grug, the sky is blue"
+    markov_message.guild.id = 12345
+
+    # Test regular bot (should be ignored)
+    regular_bot_message = MagicMock()
+    regular_bot_message.author.bot = True
+    regular_bot_message.author.name = "RegularBot"
+    regular_bot_message.content = "Grug, test message"
+    regular_bot_message.guild.id = 12345
+
+    with patch.object(bot, "personality_engine") as mock_personality_engine, patch.object(bot, "client") as mock_client:
+        # Setup mocks
+        mock_personality = MagicMock()
+        mock_personality.chosen_name = None
+        mock_personality.name = "Grug"
+        mock_personality.response_style = "caveman"
+        mock_personality_engine.get_personality.return_value = mock_personality
+
+        mock_client.user = MagicMock()
+        mock_client.user.id = 99999
+        mock_client.process_commands = AsyncMock()
+
+        # Test Markov bot interaction
+        with patch.object(bot, "handle_auto_verification") as mock_handle:
+            await bot.on_message(markov_message)
+            mock_handle.assert_called_once()  # Should be called for Markov bot
+
+        # Reset mock
+        mock_handle.reset_mock()
+
+        # Test regular bot (should be ignored)
+        await bot.on_message(regular_bot_message)
+        mock_handle.assert_not_called()  # Should NOT be called for regular bot
+
+
+@pytest.mark.asyncio
+async def test_markov_bot_special_responses():
+    """Test special responses for Markov bot interactions."""
+    mock_message = MagicMock()
+    mock_message.author.bot = True
+    mock_message.author.name = "MarkovBot"
+    mock_message.author.id = 88888
+    mock_message.content = "Grug hi"  # Short content
+    mock_message.channel.send = AsyncMock()
+
+    # Mock personality
+    mock_personality = MagicMock()
+    mock_personality.chosen_name = None
+    mock_personality.name = "Grug"
+    mock_personality.response_style = "caveman"
+
+    await bot.handle_auto_verification(mock_message, "12345", mock_personality)
+
+    # Should send special Markov bot acknowledgment
+    mock_message.channel.send.assert_called_once()
+    args, _ = mock_message.channel.send.call_args
+    assert "robot friend" in args[0]
+
+
 # Test clean_statement
 def test_clean_statement():
     assert bot.clean_statement("hello <@123> world") == "hello world"
