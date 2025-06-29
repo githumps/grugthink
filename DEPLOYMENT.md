@@ -129,6 +129,7 @@ Expected results:
 | `GRUGBOT_VARIANT` | `prod` | Bot variant (`prod` or `dev`) |
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`) |
 | `GRUGBOT_DATA_DIR` | `.` | Data directory (use `/data` in Docker) |
+| `FORCE_PERSONALITY` | `None` | Force specific personality (`grug`, `big_rob`, `adaptive`) |
 
 ### Search and AI Configuration
 
@@ -153,6 +154,9 @@ GRUGBOT_DATA_DIR=/data
 LOAD_EMBEDDER=True
 GOOGLE_API_KEY=your_google_api_key
 GOOGLE_CSE_ID=your_cse_id
+
+# Personality configuration
+FORCE_PERSONALITY=grug          # Options: grug, big_rob, adaptive (optional)
 
 # Logging
 LOG_LEVEL=INFO

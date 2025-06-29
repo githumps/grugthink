@@ -23,6 +23,7 @@ Always ensure any new code has proper tests that pass.
 Always ensure the Github workflows are updated to reflect any changes made.
 Always ensure the project will successfully work in Docker with the Dockerfile.
 Always ensure the project will build correctly when committed to Github and the automated Github Actions run to build and check.
+Always ensure all documentation and markdown files are updated with new project details such as if new commands exist, etc.
 
 #### Linting and Formatting
 ```bash

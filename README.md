@@ -140,6 +140,11 @@ GOOGLE_CSE_ID=your_custom_search_engine_id
 # Ollama Configuration (alternative to Gemini)
 OLLAMA_URLS=http://localhost:11434
 OLLAMA_MODELS=llama3.2:3b
+
+# Force specific personality for all servers (optional)
+FORCE_PERSONALITY=grug          # Options: grug, big_rob, adaptive
+# FORCE_PERSONALITY=big_rob     # Force Big Rob for all servers
+# FORCE_PERSONALITY=adaptive    # Force neutral AI for all servers
 ```
 
 ## 🏗️ Architecture
@@ -148,6 +153,7 @@ OLLAMA_MODELS=llama3.2:3b
 - **Templates**: Base personality configurations (speech patterns, backgrounds, traits)
 - **Evolution System**: 4-stage progression (Initial → Developing → Established → Evolved)
 - **Server Isolation**: Each Discord server develops its own unique personality
+- **Forced Personalities**: Use `FORCE_PERSONALITY` to override automatic selection
 - **Persistence**: SQLite storage with personality state and evolution tracking
 
 ### Technical Stack
