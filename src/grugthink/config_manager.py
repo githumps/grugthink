@@ -13,9 +13,24 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-import yaml
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+# Optional dependencies for configuration management
+try:
+    import yaml
+
+    _YAML_AVAILABLE = True
+except ImportError:
+    yaml = None
+    _YAML_AVAILABLE = False
+
+try:
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
+    _WATCHDOG_AVAILABLE = True
+except ImportError:
+    FileSystemEventHandler = None
+    Observer = None
+    _WATCHDOG_AVAILABLE = False
 
 from .grug_structured_logger import get_logger
 
@@ -36,15 +51,24 @@ class ConfigTemplate:
     custom_env: Dict[str, str] = field(default_factory=dict)
 
 
-class ConfigChangeHandler(FileSystemEventHandler):
-    """Handles configuration file changes."""
+if _WATCHDOG_AVAILABLE:
 
-    def __init__(self, config_manager):
-        self.config_manager = config_manager
+    class ConfigChangeHandler(FileSystemEventHandler):
+        """Handles configuration file changes."""
 
-    def on_modified(self, event):
-        if not event.is_directory and event.src_path == self.config_manager.config_file:
-            self.config_manager._reload_config()
+        def __init__(self, config_manager):
+            self.config_manager = config_manager
+
+        def on_modified(self, event):
+            if not event.is_directory and event.src_path == self.config_manager.config_file:
+                self.config_manager._reload_config()
+else:
+
+    class ConfigChangeHandler:
+        """Stub class when watchdog is not available."""
+
+        def __init__(self, config_manager):
+            pass
 
 
 class ConfigManager:
@@ -57,9 +81,13 @@ class ConfigManager:
         self.change_callbacks: List[Callable] = []
         self._lock = threading.Lock()
 
-        # File watcher for hot-reloading
-        self.observer = Observer()
-        self.handler = ConfigChangeHandler(self)
+        # File watcher for hot-reloading (if watchdog available)
+        if _WATCHDOG_AVAILABLE:
+            self.observer = Observer()
+            self.handler = ConfigChangeHandler(self)
+        else:
+            self.observer = None
+            self.handler = ConfigChangeHandler(self)
 
         # Built-in templates
         self.templates = self._create_default_templates()
@@ -120,7 +148,11 @@ class ConfigManager:
             if os.path.exists(self.config_file):
                 with open(self.config_file, "r") as f:
                     if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
-                        data = yaml.safe_load(f) or {}
+                        if _YAML_AVAILABLE:
+                            data = yaml.safe_load(f) or {}
+                        else:
+                            log.warning("YAML config file found but PyYAML not available, skipping")
+                            data = {}
                     else:
                         data = json.load(f)
 
@@ -162,7 +194,11 @@ class ConfigManager:
         try:
             with open(self.config_file, "w") as f:
                 if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
-                    yaml.safe_dump(default_config, f, indent=2, default_flow_style=False)
+                    if _YAML_AVAILABLE:
+                        yaml.safe_dump(default_config, f, indent=2, default_flow_style=False)
+                    else:
+                        # Fall back to JSON if yaml not available
+                        json.dump(default_config, f, indent=2)
                 else:
                     json.dump(default_config, f, indent=2)
 
@@ -194,6 +230,10 @@ class ConfigManager:
 
     def _start_watching(self):
         """Start watching configuration file for changes."""
+        if not _WATCHDOG_AVAILABLE or self.observer is None:
+            log.info("File watching disabled (watchdog not available)")
+            return
+
         try:
             config_dir = os.path.dirname(os.path.abspath(self.config_file))
             self.observer.schedule(self.handler, config_dir, recursive=False)
@@ -378,7 +418,10 @@ class ConfigManager:
         try:
             with open(self.config_file, "w") as f:
                 if self.config_file.endswith(".yaml") or self.config_file.endswith(".yml"):
-                    yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
+                    if _YAML_AVAILABLE:
+                        yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
+                    else:
+                        json.dump(self.config_data, f, indent=2)
                 else:
                     json.dump(self.config_data, f, indent=2)
 
@@ -391,11 +434,20 @@ class ConfigManager:
         """Export current configuration to file."""
         if filename is None:
             timestamp = int(time.time())
-            filename = f"grugthink_config_backup_{timestamp}.yaml"
+            if _YAML_AVAILABLE:
+                filename = f"grugthink_config_backup_{timestamp}.yaml"
+            else:
+                filename = f"grugthink_config_backup_{timestamp}.json"
 
         try:
             with open(filename, "w") as f:
-                yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
+                if filename.endswith(".yaml") or filename.endswith(".yml"):
+                    if _YAML_AVAILABLE:
+                        yaml.safe_dump(self.config_data, f, indent=2, default_flow_style=False)
+                    else:
+                        json.dump(self.config_data, f, indent=2)
+                else:
+                    json.dump(self.config_data, f, indent=2)
 
             log.info("Configuration exported", extra={"filename": filename})
 
@@ -410,7 +462,10 @@ class ConfigManager:
         try:
             with open(filename, "r") as f:
                 if filename.endswith(".yaml") or filename.endswith(".yml"):
-                    imported_config = yaml.safe_load(f)
+                    if _YAML_AVAILABLE:
+                        imported_config = yaml.safe_load(f)
+                    else:
+                        raise ValueError("YAML config file provided but PyYAML not available")
                 else:
                     imported_config = json.load(f)
 
@@ -430,7 +485,7 @@ class ConfigManager:
 
     def stop(self):
         """Stop the configuration manager."""
-        if self.observer.is_alive():
+        if self.observer and hasattr(self.observer, "is_alive") and self.observer.is_alive():
             self.observer.stop()
             self.observer.join()
 

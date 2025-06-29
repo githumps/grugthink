@@ -9,15 +9,21 @@ __version__ = "3.0.0"
 __author__ = "GrugThink Contributors"
 __description__ = "Adaptable Discord Personality Engine with Multi-Bot Container Support"
 
-# Core modules
-from .api_server import APIServer
-
-# Multi-bot system
+# Multi-bot system - core modules always available
 from .bot_manager import BotConfig, BotInstance, BotManager
 from .config_manager import ConfigManager, ConfigTemplate
 from .grug_db import GrugDB
 from .grug_structured_logger import get_logger
 from .personality_engine import PersonalityEngine, PersonalityState, PersonalityTemplate
+
+# Optional API server (requires uvicorn/fastapi)
+try:
+    from .api_server import APIServer
+
+    _API_SERVER_AVAILABLE = True
+except ImportError:
+    APIServer = None
+    _API_SERVER_AVAILABLE = False
 
 __all__ = [
     "PersonalityEngine",
@@ -30,5 +36,8 @@ __all__ = [
     "BotInstance",
     "ConfigManager",
     "ConfigTemplate",
-    "APIServer",
 ]
+
+# Only export APIServer if available
+if _API_SERVER_AVAILABLE:
+    __all__.append("APIServer")
