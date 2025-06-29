@@ -66,13 +66,14 @@ def download_model(model_name="all-MiniLM-L6-v2"):
 
 
 class GrugDB:
-    def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global"):
+    def __init__(self, db_path, model_name="all-MiniLM-L6-v2", server_id="global", load_embedder: bool = True):
         self.db_path = db_path
         self.server_id = str(server_id)  # Ensure server_id is string
         self.index_path = db_path.replace(".db", f"_{self.server_id}.index")
         self.model_name = model_name
         self.embedder = None
         self.dimension = 384  # Default dimension, will be updated if embedder loads
+        self.load_embedder = load_embedder
 
         self.conn = None
         self.index = None
@@ -82,6 +83,10 @@ class GrugDB:
         self._load_index()
 
     def _ensure_embedder_loaded(self):
+        if not self.load_embedder:
+            log.info("Embedder loading explicitly disabled.")
+            return
+
         if self.embedder is None:
             with self.lock:  # Acquire lock before loading to prevent race conditions
                 if self.embedder is None:  # Double-check inside lock
