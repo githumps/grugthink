@@ -499,7 +499,7 @@ class GrugThinkDashboard {
                 body: JSON.stringify({
                     name,
                     template_id: templateId,
-                    discord_token: token.token || 'placeholder', // Will need actual token
+                    discord_token_id: tokenId, // Send the token ID
                     gemini_api_key: geminiKey || undefined
                 })
             });

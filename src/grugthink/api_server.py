@@ -29,7 +29,7 @@ log = get_logger(__name__)
 class CreateBotRequest(BaseModel):
     name: str
     template_id: str
-    discord_token: str
+    discord_token_id: str
     gemini_api_key: Optional[str] = None
     ollama_urls: Optional[str] = None
     ollama_models: Optional[str] = None
@@ -156,8 +156,13 @@ class APIServer:
                 if not template:
                     raise HTTPException(status_code=400, detail=f"Template '{request.template_id}' not found")
 
+                # Retrieve the actual Discord token using the token ID
+                discord_token = self.config_manager.get_discord_token_by_id(request.discord_token_id)
+                if not discord_token:
+                    raise HTTPException(status_code=400, detail=f"Discord token with ID '{request.discord_token_id}' not found or inactive.")
+
                 # Create bot environment from template
-                self.config_manager.create_bot_env(request.template_id, request.discord_token, **request.custom_env)
+                self.config_manager.create_bot_env(request.template_id, discord_token, **request.custom_env)
 
                 # Override with specific values if provided
                 overrides = {}
@@ -176,7 +181,7 @@ class APIServer:
 
                 bot_id = self.bot_manager.create_bot(
                     name=request.name,
-                    discord_token=request.discord_token,
+                    discord_token=discord_token,
                     force_personality=template.force_personality,
                     load_embedder=template.load_embedder,
                     **overrides,

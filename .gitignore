@@ -32,3 +32,5 @@ models/
 .cache/
 # User-specific cache directories
 */.cache/grugthink/
+bot_configs.json
+grugthink_config.yaml

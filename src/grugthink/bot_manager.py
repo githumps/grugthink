@@ -252,8 +252,14 @@ class BotManager:
             # Start the bot in a separate task
             instance.task = asyncio.create_task(client.start(config.discord_token))
 
-            # Wait for bot to be ready
-            await client.wait_until_ready()
+            # Give it a moment to start
+            await asyncio.sleep(2)
+            
+            # Check if the task failed
+            if instance.task.done():
+                exception = instance.task.exception()
+                if exception:
+                    raise exception
 
             config.status = "running"
             instance.last_heartbeat = time.time()
@@ -362,26 +368,33 @@ class BotManager:
 
     async def _setup_bot_commands(self, instance: BotInstance, env: Dict[str, str]):
         """Setup Discord commands for a bot instance."""
-        # Import and add the GrugThinkBot cog
-        from .bot import GrugThinkBot
-        
         client = instance.client
         
-        # Add the GrugThinkBot cog with proper instance
-        await client.add_cog(GrugThinkBot(client, instance))
-
         @client.event
         async def on_ready():
-            instance.config.status = "running" # Update status to running
-            instance.last_heartbeat = time.time()
-            log.info(
-                "Bot connected to Discord",
-                extra={
-                    "bot_id": instance.config.bot_id,
-                    "bot_name": client.user.name,
-                    "guild_count": len(client.guilds),
-                },
-            )
+            try:
+                # Import and add the GrugThinkBot cog after client is ready
+                from .bot import GrugThinkBot
+                
+                # Add the GrugThinkBot cog with proper instance
+                await client.add_cog(GrugThinkBot(client, instance))
+                
+                # Sync commands after adding cog
+                await client.tree.sync()
+                
+                instance.config.status = "running" # Update status to running
+                instance.last_heartbeat = time.time()
+                log.info(
+                    "Bot connected to Discord and commands synced",
+                    extra={
+                        "bot_id": instance.config.bot_id,
+                        "bot_name": client.user.name,
+                        "guild_count": len(client.guilds),
+                    },
+                )
+            except Exception as e:
+                log.error("Error in bot on_ready setup", extra={"bot_id": instance.config.bot_id, "error": str(e)})
+                instance.config.status = "error"
 
     async def start_all_bots(self):
         """Start all configured bots."""

@@ -342,6 +342,14 @@ class ConfigManager:
                 return token_data["token"]
         return None
 
+    def get_discord_token_by_id(self, token_id: str) -> Optional[str]:
+        """Get a Discord token by its ID."""
+        tokens = self.get_discord_tokens()
+        for token_data in tokens:
+            if token_data["id"] == token_id:
+                return token_data["token"]
+        return None
+
     def get_template(self, template_id: str) -> Optional[ConfigTemplate]:
         """Get bot configuration template."""
         if template_id in self.templates:

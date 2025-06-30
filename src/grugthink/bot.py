@@ -67,7 +67,6 @@ server_manager = GrugServerManager(config.DB_PATH)
 
 _personality_engine_instance = None
 
-
 def get_personality_engine():
     global _personality_engine_instance
     if _personality_engine_instance is None:
@@ -182,14 +181,12 @@ Answer:"""
 # Discord client setup
 intents = discord.Intents.default()
 intents.message_content = True
-client = commands.Bot(command_prefix="/", intents=intents)
-tree = client.tree
 
 session = requests.Session()
 
 
 def clean_statement(text: str) -> str:
-    text = re.sub(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", "", text)
+    text = re.sub(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", "", text)
     text = re.sub(r"<@[!&]?[0-9]+>", "", text)
     text = re.sub(r"<#[0-9]+>", "", text)
     text = " ".join(text.split())
@@ -340,424 +337,451 @@ def validate_and_process_response(response: str, cache_key: str, server_db=None)
     return None
 
 
-@client.event
-async def on_ready():
-    log.info("Logged in to Discord", extra={"user": str(client.user)})
-    try:
-        await tree.sync()
-        log.info("Commands synced")
-    except Exception as e:
-        log.error("Failed to sync commands", extra={"error": str(e)})
+class GrugThinkBot(commands.Cog):
+    def __init__(self, client: commands.Bot, bot_instance):
+        self.client = client
+        self.bot_instance = bot_instance
+        self.personality_engine = bot_instance.personality_engine
+        self.server_db = bot_instance.db
+        self.tree = client.tree
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        log.info("Logged in to Discord", extra={"user": str(self.client.user)})
+        try:
+            await self.tree.sync()
+            log.info("Commands synced")
+        except Exception as e:
+            log.error("Failed to sync commands", extra={"error": str(e)})
 
-@client.event
-async def on_guild_join(guild):
-    """Initialize personality when joining a new server."""
-    server_id = str(guild.id)
-    personality = get_personality_engine().get_personality(server_id)
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild):
+        """Initialize personality when joining a new server."""
+        server_id = str(guild.id)
+        personality = self.personality_engine.get_personality(server_id)
 
-    log.info(
-        "Joined new server, personality initialized",
-        extra={"guild_id": server_id, "guild_name": guild.name, "personality_name": personality.name},
-    )
+        log.info(
+            "Joined new server, personality initialized",
+            extra={"guild_id": server_id, "guild_name": guild.name, "personality_name": personality.name},
+        )
 
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        """Handle incoming messages and detect name mentions for auto-verification."""
+        # Ignore messages from bots, except for Markov bots
+        if message.author.bot:
+            # Only allow interaction with bots whose username contains "Markov"
+            if "markov" not in message.author.name.lower():
+                return
 
-@client.event
-async def on_message(message):
-    """Handle incoming messages and detect name mentions for auto-verification."""
-    # Ignore messages from bots, except for Markov bots
-    if message.author.bot:
-        # Only allow interaction with bots whose username contains "Markov"
-        if "markov" not in message.author.name.lower():
-            return
+        # Process commands first
+        await self.client.process_commands(message)
 
-    # Process commands first
-    await client.process_commands(message)
+        # Get personality for this server
+        server_id = str(message.guild.id) if message.guild else "dm"
+        personality = self.personality_engine.get_personality(server_id)
+        bot_name = personality.chosen_name or personality.name
 
-    # Get personality for this server
-    server_id = str(message.guild.id) if message.guild else "dm"
-    personality = get_personality_engine().get_personality(server_id)
-    bot_name = personality.chosen_name or personality.name
+        # Check if bot name is mentioned in the message
+        if self.is_bot_mentioned(message.content, bot_name):
+            await self.handle_auto_verification(message, server_id, personality)
 
-    # Check if bot name is mentioned in the message
-    if is_bot_mentioned(message.content, bot_name):
-        await handle_auto_verification(message, server_id, personality)
+    def is_bot_mentioned(self, content: str, bot_name: str) -> bool:
+        """Check if the bot name is mentioned in the message content."""
+        content_lower = content.lower()
+        bot_name_lower = bot_name.lower()
 
-
-def is_bot_mentioned(content: str, bot_name: str) -> bool:
-    """Check if the bot name is mentioned in the message content."""
-    content_lower = content.lower()
-    bot_name_lower = bot_name.lower()
-
-    # Check for direct name mentions (word boundaries)
-    if re.search(rf"\b{re.escape(bot_name_lower)}\b", content_lower):
-        return True
-
-    # Check for common variations and nicknames (word boundaries)
-    common_names = ["grug", "grugthink"]
-    for name in common_names:
-        if re.search(rf"\b{name}\b", content_lower):
+        # Check for direct name mentions (word boundaries)
+        if re.search(rf"\b{re.escape(bot_name_lower)}\b", content_lower):
             return True
 
-    # Check for "bot" but only when directly addressing (with punctuation)
-    if re.search(r"\bbot[,!?.\s]", content_lower):
-        return True
+        # Check for common variations and nicknames (word boundaries)
+        common_names = ["grug", "grugthink"]
+        for name in common_names:
+            if re.search(rf"\b{name}\b", content_lower):
+                return True
 
-    # Check for @mentions of the bot user
-    if client.user and f"<@{client.user.id}>" in content:
-        return True
-    if client.user and f"<@!{client.user.id}>" in content:
-        return True
+        # Check for "bot" but only when directly addressing (with punctuation)
+        if re.search(r"\bbot[,!?.]\\s]", content_lower):
+            return True
 
-    return False
+        # Check for @mentions of the bot user
+        if self.client.user and f"<@{self.client.user.id}>" in content:
+            return True
+        if self.client.user and f"<@!{self.client.user.id}>" in content:
+            return True
 
+        return False
 
-async def handle_auto_verification(message, server_id: str, personality):
-    """Handle automatic verification when bot name is mentioned."""
-    # Log if this is a Markov bot interaction
-    is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
-    if is_markov_bot:
-        log.info(
-            "Markov bot interaction",
-            extra={
-                "markov_bot_name": message.author.name,
-                "server_id": server_id,
-                "message_length": len(message.content),
-            },
-        )
-
-    # Rate limiting check
-    if is_rate_limited(message.author.id):
-        # Send a brief rate limit message
-        if personality.response_style == "caveman":
-            await message.channel.send("Grug need rest. Wait little.", delete_after=5)
-        elif personality.response_style == "british_working_class":
-            await message.channel.send("slow down mate, too much carlin last nite, simple as", delete_after=5)
-        else:
-            await message.channel.send("Please wait a moment.", delete_after=5)
-        return
-
-    # Clean the message content for verification
-    clean_content = clean_statement(message.content)
-
-    # Remove bot name mentions to get the actual statement
-    bot_name = personality.chosen_name or personality.name
-    for name_variant in [bot_name.lower(), "grug", "grugthink", "bot"]:
-        clean_content = re.sub(rf"\b{re.escape(name_variant)}\b", "", clean_content, flags=re.IGNORECASE)
-
-    # Remove @mentions
-    if client.user:
-        clean_content = clean_content.replace(f"<@{client.user.id}>", "")
-        clean_content = clean_content.replace(f"<@!{client.user.id}>", "")
-
-    # Clean up extra whitespace
-    clean_content = re.sub(r"\s+", " ", clean_content).strip()
-
-    # Skip if the remaining content is too short or just punctuation
-    if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):
-        # Respond with a personality-appropriate acknowledgment
+    async def handle_auto_verification(self, message, server_id: str, personality):
+        """Handle automatic verification when bot name is mentioned."""
+        # Log if this is a Markov bot interaction
+        is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
         if is_markov_bot:
-            # Special responses for Markov bot interactions
-            if personality.response_style == "caveman":
-                response = f"{bot_name} hear robot friend call!"
-            elif personality.response_style == "british_working_class":
-                response = "alright robot mate, wot you sayin, nuff said"
-            else:
-                response = "Hello fellow bot! What would you like me to verify?"
-        else:
-            # Normal human responses
-            if personality.response_style == "caveman":
-                response = f"{bot_name} hear you call!"
-            elif personality.response_style == "british_working_class":
-                response = "wot you want mate, nuff said"
-            else:
-                response = "I'm listening. What would you like me to verify?"
-
-        await message.channel.send(response)
-        return
-
-    # Send thinking message
-    bot_name_display = personality.chosen_name or personality.name
-    if is_markov_bot:
-        if personality.response_style == "caveman":
-            thinking_msg = f"{bot_name_display} think about robot friend words..."
-        elif personality.response_style == "british_working_class":
-            thinking_msg = f"{bot_name_display} checkin wot robot mate said..."
-        else:
-            thinking_msg = f"{bot_name_display} analyzing bot input..."
-    else:
-        thinking_msg = f"{bot_name_display} thinking..."
-
-    thinking_message = await message.channel.send(thinking_msg)
-
-    try:
-        # Get the server-specific database
-        server_db = get_server_db(message.guild.id if message.guild else "dm")
-
-        # Run verification in executor to avoid blocking
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, query_model, clean_content, server_db, server_id)
-
-        if result:
-            # Apply personality style to response
-            styled_result = get_personality_engine().get_response_with_style(server_id, result)
-            await thinking_message.edit(content=f"🤔 {styled_result}")
-
             log.info(
-                "Auto-verification completed",
+                "Markov bot interaction",
                 extra={
-                    "user_id": str(message.author.id),
+                    "markov_bot_name": message.author.name,
                     "server_id": server_id,
-                    "statement_length": len(clean_content),
-                    "result_length": len(styled_result),
-                    "is_markov_bot": is_markov_bot,
-                    "author_name": message.author.name if is_markov_bot else None,
+                    "message_length": len(message.content),
                 },
             )
+
+        # Rate limiting check
+        if is_rate_limited(message.author.id):
+            # Send a brief rate limit message
+            if personality.response_style == "caveman":
+                await message.channel.send("Grug need rest. Wait little.", delete_after=5)
+            elif personality.response_style == "british_working_class":
+                await message.channel.send("slow down mate, too much carlin last nite, simple as", delete_after=5)
+            else:
+                await message.channel.send("Please wait a moment.", delete_after=5)
+            return
+
+        # Clean the message content for verification
+        clean_content = clean_statement(message.content)
+
+        # Remove bot name mentions to get the actual statement
+        bot_name = personality.chosen_name or personality.name
+        for name_variant in [bot_name.lower(), "grug", "grugthink", "bot"]:
+            clean_content = re.sub(rf"\b{re.escape(name_variant)}\b", "", clean_content, flags=re.IGNORECASE)
+
+        # Remove @mentions
+        if self.client.user:
+            clean_content = clean_content.replace(f"<@{self.client.user.id}>", "")
+            clean_content = clean_content.replace(f"<@!{self.client.user.id}>", "")
+
+        # Clean up extra whitespace
+        clean_content = re.sub(r"\s+", " ", clean_content).strip()
+
+        # Skip if the remaining content is too short or just punctuation
+        if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):
+            # Respond with a personality-appropriate acknowledgment
+            if is_markov_bot:
+                # Special responses for Markov bot interactions
+                if personality.response_style == "caveman":
+                    response = f"{bot_name} hear robot friend call!"
+                elif personality.response_style == "british_working_class":
+                    response = "alright robot mate, wot you sayin, nuff said"
+                else:
+                    response = "Hello fellow bot! What would you like me to verify?"
+            else:
+                # Normal human responses
+                if personality.response_style == "caveman":
+                    response = f"{bot_name} hear you call!"
+                elif personality.response_style == "british_working_class":
+                    response = "wot you want mate, nuff said"
+                else:
+                    response = "I'm listening. What would you like me to verify?"
+
+            await message.channel.send(response)
+            return
+
+        # Send thinking message
+        bot_name_display = personality.chosen_name or personality.name
+        if is_markov_bot:
+            if personality.response_style == "caveman":
+                thinking_msg = f"{bot_name_display} think about robot friend words..."
+            elif personality.response_style == "british_working_class":
+                thinking_msg = f"{bot_name_display} checkin wot robot mate said..."
+            else:
+                thinking_msg = f"{bot_name_display} analyzing bot input..."
         else:
-            # Use personality-appropriate error message
-            error_msg = get_personality_engine().get_error_message(server_id)
-            await thinking_message.edit(content=f"❓ {error_msg}")
+            thinking_msg = f"{bot_name_display} thinking..."
 
-    except Exception as exc:
-        log.error(
-            "Auto-verification error",
-            extra={"error": str(exc), "user_id": str(message.author.id), "server_id": server_id},
+        thinking_message = await message.channel.send(thinking_msg)
+
+        try:
+            # Get the server-specific database
+            server_db = get_server_db(message.guild.id if message.guild else "dm")
+
+            # Run verification in executor to avoid blocking
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, query_model, clean_content, server_db, server_id)
+
+            if result:
+                # Apply personality style to response
+                styled_result = self.personality_engine.get_response_with_style(server_id, result)
+                await thinking_message.edit(content=f"🤔 {styled_result}")
+
+                log.info(
+                    "Auto-verification completed",
+                    extra={
+                        "user_id": str(message.author.id),
+                        "server_id": server_id,
+                        "statement_length": len(clean_content),
+                        "result_length": len(styled_result),
+                        "is_markov_bot": is_markov_bot,
+                        "author_name": message.author.name if is_markov_bot else None,
+                    },
+                )
+            else:
+                # Use personality-appropriate error message
+                error_msg = self.personality_engine.get_error_message(server_id)
+                await thinking_message.edit(content=f"❓ {error_msg}")
+
+        except Exception as exc:
+            log.error(
+                "Auto-verification error",
+                extra={"error": str(exc), "user_id": str(message.author.id), "server_id": server_id},
+            )
+            # Use personality for error message
+            error_msg = self.personality_engine.get_error_message(server_id)
+            await thinking_message.edit(content=f"💥 {error_msg}")
+
+
+    @app_commands.command(name="verify", description="Verify the truthfulness of the previous message.")
+    async def verify(self, interaction: discord.Interaction):
+        if is_rate_limited(interaction.user.id):
+            await interaction.response.send_message("Slow down! Wait a few seconds.", ephemeral=True)
+            return
+
+        channel = interaction.channel
+        history = [m async for m in channel.history(limit=25) if not m.author.bot and m.content.strip()]
+
+        if not history:
+            await interaction.response.send_message("No user message to verify.", ephemeral=True)
+            return
+
+        target = history[0].content
+        log.info(
+            "Verify command initiated",
+            extra={"user_id": str(interaction.user.id), "target_length": len(target)},
         )
-        # Use personality for error message
-        error_msg = get_personality_engine().get_error_message(server_id)
-        await thinking_message.edit(content=f"💥 {error_msg}")
+
+        await interaction.response.defer(ephemeral=False)  # Tell Discord the bot is thinking
+
+        # Get server ID and personality info
+        server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+        personality = self.personality_engine.get_personality(server_id)
+        thinking_msg = f"{personality.chosen_name or personality.name} thinking..."
+
+        msg = await interaction.followup.send(thinking_msg, ephemeral=False)
+
+        try:
+            # Get the server-specific database
+            server_db = get_server_db(interaction)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, query_model, target, server_db, server_id)
+
+            if result:
+                # Apply personality style to response
+                styled_result = self.personality_engine.get_response_with_style(server_id, result)
+                await msg.edit(content=f"Verification: {styled_result}")
+            else:
+                error_msg = self.personality_engine.get_error_message(server_id)
+                await msg.edit(content=error_msg)
+
+        except Exception as exc:
+            log.error(
+                "Slash command error",
+                extra={"error": str(exc), "traceback": traceback.format_exc()},
+            )
+            # Use personality for error message
+            error_msg = self.personality_engine.get_error_message(server_id)
+            await msg.edit(content=f"💥 {error_msg}")
 
 
-GRUGBOT_VARIANT = config.GRUGBOT_VARIANT
-verify_cmd_name = "verify-dev" if GRUGBOT_VARIANT == "dev" else "verify"
+    @app_commands.command(name="learn", description="Teach the bot a new fact.")
+    @app_commands.describe(fact="The fact to learn.")
+    async def learn(self, interaction: discord.Interaction, fact: str):
+        await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
 
+        # Get personality info
+        server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+        personality = self.personality_engine.get_personality(server_id)
+        bot_name = personality.chosen_name or personality.name
 
-async def _handle_verification(interaction: discord.Interaction):
-    if is_rate_limited(interaction.user.id):
-        await interaction.response.send_message("Slow down! Wait a few seconds.", ephemeral=True)
-        return
+        if interaction.user.id not in config.TRUSTED_USER_IDS:
+            if personality.response_style == "caveman":
+                await interaction.followup.send(f"You not trusted to teach {bot_name}.", ephemeral=True)
+            elif personality.response_style == "british_working_class":
+                await interaction.followup.send("oi oi, you aint on the list mate, end of", ephemeral=True)
+            else:
+                await interaction.followup.send("You're not authorized to teach me facts.", ephemeral=True)
+            return
 
-    channel = interaction.channel
-    history = [m async for m in channel.history(limit=25) if not m.author.bot and m.content.strip()]
+        if len(fact.strip()) < 5:
+            if personality.response_style == "caveman":
+                await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
+            elif personality.response_style == "british_working_class":
+                await interaction.followup.send("wot? thats it? need more than that mate, simple as", ephemeral=True)
+            else:
+                await interaction.followup.send("Please provide a more detailed fact.", ephemeral=True)
+            return
 
-    if not history:
-        await interaction.response.send_message("No user message to verify.", ephemeral=True)
-        return
-
-    target = history[0].content
-    log.info(
-        "Verify command initiated",
-        extra={"user_id": str(interaction.user.id), "target_length": len(target)},
-    )
-
-    await interaction.response.defer(ephemeral=False)  # Tell Discord the bot is thinking
-
-    # Get server ID and personality info
-    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = get_personality_engine().get_personality(server_id)
-    thinking_msg = f"{personality.chosen_name or personality.name} thinking..."
-
-    msg = await interaction.followup.send(thinking_msg, ephemeral=False)
-
-    try:
         # Get the server-specific database
         server_db = get_server_db(interaction)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, query_model, target, server_db, server_id)
-
-        if result:
-            # Apply personality style to response
-            styled_result = get_personality_engine().get_response_with_style(server_id, result)
-            await msg.edit(content=f"Verification: {styled_result}")
+        if server_db.add_fact(fact):
+            log.info(
+                "Fact learned",
+                extra={
+                    "user_id": str(interaction.user.id),
+                    "fact_length": len(fact),
+                    "server_id": str(interaction.guild_id),
+                },
+            )
+            if personality.response_style == "caveman":
+                await interaction.followup.send(f"{bot_name} learn: {fact}", ephemeral=True)
+            elif personality.response_style == "british_working_class":
+                await interaction.followup.send(f"sorted mate, learnt that: {fact}, nuff said", ephemeral=True)
+            else:
+                await interaction.followup.send(f"Learned: {fact}", ephemeral=True)
         else:
-            error_msg = get_personality_engine().get_error_message(server_id)
-            await msg.edit(content=error_msg)
+            if personality.response_style == "caveman":
+                await interaction.followup.send(f"{bot_name} already know that.", ephemeral=True)
+            elif personality.response_style == "british_working_class":
+                await interaction.followup.send("already know that one, simple as", ephemeral=True)
+            else:
+                await interaction.followup.send("I already know that.", ephemeral=True)
 
-    except Exception as exc:
-        log.error(
-            "Slash command error",
-            extra={"error": str(exc), "traceback": traceback.format_exc()},
+
+    @app_commands.command(name="what-know", description="See all the facts the bot knows.")
+    async def what_know(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
+
+        # Get personality info
+        server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+        personality = self.personality_engine.get_personality(server_id)
+        bot_name = personality.chosen_name or personality.name
+
+        # Get the server-specific database
+        server_db = get_server_db(interaction)
+        all_facts = server_db.get_all_facts()
+
+        if not all_facts:
+            if personality.response_style == "caveman":
+                await interaction.followup.send(f"{bot_name} know nothing in this cave.", ephemeral=True)
+            elif personality.response_style == "british_working_class":
+                await interaction.followup.send("dont know nuffin yet mate, simple as", ephemeral=True)
+            else:
+                await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
+            return
+
+        # Format facts into a numbered list
+        fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
+
+        # Create a Discord embed for better formatting
+        server_name = interaction.guild.name if interaction.guild else "DM"
+
+        if personality.response_style == "caveman":
+            title = f"{bot_name}'s Memories ({server_name})"
+            description = f"{bot_name} knows {len(all_facts)} things in this cave:"
+        elif personality.response_style == "british_working_class":
+            title = f"wot i know ({server_name})"
+            description = f"got {len(all_facts)} fings in me ed, nuff said:"
+        else:
+            title = f"Knowledge Base ({server_name})"
+            description = f"I know {len(all_facts)} facts:"
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.blue(),
         )
-        # Use personality for error message
-        error_msg = get_personality_engine().get_error_message(server_id)
-        await msg.edit(content=f"💥 {error_msg}")
+        embed.add_field(name="Facts", value=fact_list[:1024], inline=False)  # Embed field value limit is 1024
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-@tree.command(name=verify_cmd_name, description="Verify the truthfulness of the previous message.")
-async def verify(interaction: discord.Interaction):
-    await _handle_verification(interaction)
+    @app_commands.command(name="help", description="Shows what the bot can do.")
+    async def help_command(self, interaction: discord.Interaction):
+        # Get personality info
+        server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+        personality = self.personality_engine.get_personality(server_id)
+        bot_name = personality.chosen_name or personality.name
 
-
-@tree.command(name="learn", description="Teach the bot a new fact.")
-@app_commands.describe(fact="The fact to learn.")
-async def learn(interaction: discord.Interaction, fact: str):
-    await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
-
-    # Get personality info
-    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = get_personality_engine().get_personality(server_id)
-    bot_name = personality.chosen_name or personality.name
-
-    if interaction.user.id not in config.TRUSTED_USER_IDS:
         if personality.response_style == "caveman":
-            await interaction.followup.send(f"You not trusted to teach {bot_name}.", ephemeral=True)
+            title = f"{bot_name} Help"
+            description = f"Here are the things {bot_name} can do:"
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("oi oi, you aint on the list mate, end of", ephemeral=True)
+            title = "wot i can do"
+            description = "right then, ere's wot im good for, simple as:"
         else:
-            await interaction.followup.send("You're not authorized to teach me facts.", ephemeral=True)
-        return
+            title = "Bot Help"
+            description = "Here are my available commands:"
 
-    if len(fact.strip()) < 5:
+        embed = discord.Embed(title=title, description=description, color=discord.Color.green())
+        embed.add_field(name="/verify", value="Verifies the truthfulness of the last message.", inline=False)
+        embed.add_field(name="/learn", value="Teach me a new fact (trusted users only).", inline=False)
+        embed.add_field(name="/what-know", value="See all the facts I know.", inline=False)
+        embed.add_field(name="/personality", value="See my personality info and evolution.", inline=False)
+        embed.add_field(name="/help", value="Shows this help message.", inline=False)
+
+        # Add auto-verification feature description
+        auto_verify_desc = f"Say '{bot_name}' or '@{bot_name}' in a message with a statement to auto-verify it!"
         if personality.response_style == "caveman":
-            await interaction.followup.send("Fact too short to be useful.", ephemeral=True)
+            auto_verify_desc = f"Say '{bot_name}' with statement and {bot_name} check truth!"
         elif personality.response_style == "british_working_class":
-            await interaction.followup.send("wot? thats it? need more than that mate, simple as", ephemeral=True)
-        else:
-            await interaction.followup.send("Please provide a more detailed fact.", ephemeral=True)
-        return
+            auto_verify_desc = "just say me name with summat and ill check it, simple as"
 
-    # Get the server-specific database
-    server_db = get_server_db(interaction)
-    if server_db.add_fact(fact):
-        log.info(
-            "Fact learned",
-            extra={
-                "user_id": str(interaction.user.id),
-                "fact_length": len(fact),
-                "server_id": str(interaction.guild_id),
-            },
+        embed.add_field(name="💬 Auto-Verification", value=auto_verify_desc, inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+    @app_commands.command(name="personality", description="Shows the bot's personality information.")
+    async def personality_info(self, interaction: discord.Interaction):
+        # Get personality info
+        # Get personality info
+        server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
+        personality_info = self.personality_engine.get_personality_info(server_id)
+
+        embed = discord.Embed(
+            title=f"Personality: {personality_info['name']}",
+            description="My personality and evolution status",
+            color=discord.Color.purple(),
         )
-        if personality.response_style == "caveman":
-            await interaction.followup.send(f"{bot_name} learn: {fact}", ephemeral=True)
-        elif personality.response_style == "british_working_class":
-            await interaction.followup.send(f"sorted mate, learnt that: {fact}, nuff said", ephemeral=True)
-        else:
-            await interaction.followup.send(f"Learned: {fact}", ephemeral=True)
-    else:
-        if personality.response_style == "caveman":
-            await interaction.followup.send(f"{bot_name} already know that.", ephemeral=True)
-        elif personality.response_style == "british_working_class":
-            await interaction.followup.send("already know that one, simple as", ephemeral=True)
-        else:
-            await interaction.followup.send("I already know that.", ephemeral=True)
 
+        # Evolution stage descriptions
+        stage_names = ["Initial", "Developing", "Established", "Evolved"]
+        stage_name = stage_names[min(personality_info["evolution_stage"], 3)]
 
-@tree.command(name="what-know", description="See all the facts the bot knows.")
-async def what_know(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
+        embed.add_field(name="Name", value=personality_info["name"], inline=True)
+        embed.add_field(name="Evolution Stage", value=f"{stage_name} ({personality_info['evolution_stage']})", inline=True)
+        embed.add_field(name="Interactions", value=str(personality_info["interaction_count"]), inline=True)
+        embed.add_field(name="Style", value=personality_info["style"], inline=True)
 
-    # Get personality info
-    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = get_personality_engine().get_personality(server_id)
-    bot_name = personality.chosen_name or personality.name
+        if personality_info["quirks"]:
+            quirks_text = ", ".join(personality_info["quirks"])
+            embed.add_field(name="Developed Quirks", value=quirks_text, inline=False)
 
-    # Get the server-specific database
-    server_db = get_server_db(interaction)
-    all_facts = server_db.get_all_facts()
-
-    if not all_facts:
-        if personality.response_style == "caveman":
-            await interaction.followup.send(f"{bot_name} know nothing in this cave.", ephemeral=True)
-        elif personality.response_style == "british_working_class":
-            await interaction.followup.send("dont know nuffin yet mate, simple as", ephemeral=True)
-        else:
-            await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
-        return
-
-    # Format facts into a numbered list
-    fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
-
-    # Create a Discord embed for better formatting
-    server_name = interaction.guild.name if interaction.guild else "DM"
-
-    if personality.response_style == "caveman":
-        title = f"{bot_name}'s Memories ({server_name})"
-        description = f"{bot_name} knows {len(all_facts)} things in this cave:"
-    elif personality.response_style == "british_working_class":
-        title = f"wot i know ({server_name})"
-        description = f"got {len(all_facts)} fings in me ed, nuff said:"
-    else:
-        title = f"Knowledge Base ({server_name})"
-        description = f"I know {len(all_facts)} facts:"
-
-    embed = discord.Embed(
-        title=title,
-        description=description,
-        color=discord.Color.blue(),
-    )
-    embed.add_field(name="Facts", value=fact_list[:1024], inline=False)  # Embed field value limit is 1024
-
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-@tree.command(name="help", description="Shows what the bot can do.")
-async def help_command(interaction: discord.Interaction):
-    # Get personality info
-    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality = get_personality_engine().get_personality(server_id)
-    bot_name = personality.chosen_name or personality.name
-
-    if personality.response_style == "caveman":
-        title = f"{bot_name} Help"
-        description = f"Here are the things {bot_name} can do:"
-    elif personality.response_style == "british_working_class":
-        title = "wot i can do"
-        description = "right then, ere's wot im good for, simple as:"
-    else:
-        title = "Bot Help"
-        description = "Here are my available commands:"
-
-    embed = discord.Embed(title=title, description=description, color=discord.Color.green())
-    embed.add_field(name="/verify", value="Verifies the truthfulness of the last message.", inline=False)
-    embed.add_field(name="/learn", value="Teach me a new fact (trusted users only).", inline=False)
-    embed.add_field(name="/what-know", value="See all the facts I know.", inline=False)
-    embed.add_field(name="/personality", value="See my personality info and evolution.", inline=False)
-    embed.add_field(name="/help", value="Shows this help message.", inline=False)
-
-    # Add auto-verification feature description
-    auto_verify_desc = f"Say '{bot_name}' or '@{bot_name}' in a message with a statement to auto-verify it!"
-    if personality.response_style == "caveman":
-        auto_verify_desc = f"Say '{bot_name}' with statement and {bot_name} check truth!"
-    elif personality.response_style == "british_working_class":
-        auto_verify_desc = "just say me name with summat and ill check it, simple as"
-
-    embed.add_field(name="💬 Auto-Verification", value=auto_verify_desc, inline=False)
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-@tree.command(name="personality", description="Shows the bot's personality information.")
-async def personality_info(interaction: discord.Interaction):
-    # Get personality info
-    # Get personality info
-    server_id = str(interaction.guild_id) if interaction.guild_id else "dm"
-    personality_info = get_personality_engine().get_personality_info(server_id)
-
-    embed = discord.Embed(
-        title=f"Personality: {personality_info['name']}",
-        description="My personality and evolution status",
-        color=discord.Color.purple(),
-    )
-
-    # Evolution stage descriptions
-    stage_names = ["Initial", "Developing", "Established", "Evolved"]
-    stage_name = stage_names[min(personality_info["evolution_stage"], 3)]
-
-    embed.add_field(name="Name", value=personality_info["name"], inline=True)
-    embed.add_field(name="Evolution Stage", value=f"{stage_name} ({personality_info['evolution_stage']})", inline=True)
-    embed.add_field(name="Interactions", value=str(personality_info["interaction_count"]), inline=True)
-    embed.add_field(name="Style", value=personality_info["style"], inline=True)
-
-    if personality_info["quirks"]:
-        quirks_text = ", ".join(personality_info["quirks"])
-        embed.add_field(name="Developed Quirks", value=quirks_text, inline=False)
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 def main():
     log.info("Connecting to Discord gateway...")
+
+    # Discord client setup
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = commands.Bot(command_prefix="/", intents=intents)
+
+    # Add the GrugThinkBot cog
+    from unittest.mock import MagicMock
+    bot_instance_mock = MagicMock() # This will be replaced by actual instance in bot_manager
+    bot_instance_mock.personality_engine = get_personality_engine()
+    bot_instance_mock.db = server_manager.get_server_db("global") # Use a dummy DB for single bot mode
+
+    @client.event
+    async def on_ready():
+        log.info("Single bot mode: Logged in to Discord", extra={"user": str(client.user)})
+        try:
+            await client.tree.sync()
+            log.info("Single bot mode: Commands synced")
+        except Exception as e:
+            log.error("Single bot mode: Failed to sync commands", extra={"error": str(e)})
+
+    @client.event
+    async def on_guild_join(guild):
+        server_id = str(guild.id)
+        personality = get_personality_engine().get_personality(server_id)
+        log.info(
+            "Single bot mode: Joined new server, personality initialized",
+            extra={"guild_id": server_id, "guild_name": guild.name, "personality_name": personality.name},
+        )
+
+    client.add_cog(GrugThinkBot(client, bot_instance_mock))
 
     # Signal handler for graceful shutdown
     def signal_handler(signum, frame):
