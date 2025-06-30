@@ -7,6 +7,7 @@ Run with PYTHONUNBUFFERED so every print is flushed immediately.
 
 import asyncio
 import hashlib
+import os
 import re
 import signal
 import sys
@@ -67,10 +68,13 @@ server_manager = GrugServerManager(config.DB_PATH)
 
 _personality_engine_instance = None
 
+
 def get_personality_engine():
     global _personality_engine_instance
     if _personality_engine_instance is None:
-        _personality_engine_instance = PersonalityEngine("personalities.db")
+        # For single-bot mode, respect FORCE_PERSONALITY environment variable
+        forced_personality = os.getenv("FORCE_PERSONALITY")
+        _personality_engine_instance = PersonalityEngine("personalities.db", forced_personality=forced_personality)
     return _personality_engine_instance
 
 
@@ -119,9 +123,9 @@ def log_initial_settings():
 # log_initial_settings() # Moved to individual bot startup to avoid conflicts in multi-bot mode
 
 
-def build_personality_context(statement: str, server_db, server_id: str) -> str:
+def build_personality_context(statement: str, server_db, server_id: str, personality_engine) -> str:
     """Build personality context with semantically relevant lore for this server."""
-    personality = get_personality_engine().get_personality(server_id)
+    personality = personality_engine.get_personality(server_id)
 
     # Get base context from personality
     base_context = personality.base_context
@@ -144,13 +148,15 @@ def build_personality_context(statement: str, server_db, server_id: str) -> str:
     return base_context
 
 
-def build_personality_prompt(statement: str, server_db, server_id: str, external_info: str = "") -> str:
+def build_personality_prompt(
+    statement: str, server_db, server_id: str, personality_engine, external_info: str = ""
+) -> str:
     """Build complete personality verification prompt with lore and external info."""
-    personality_context = build_personality_context(statement, server_db, server_id)
+    personality_context = build_personality_context(statement, server_db, server_id, personality_engine)
 
     # Add external info using personality engine
     if external_info:
-        personality_context = get_personality_engine().get_context_prompt(server_id, external_info)
+        personality_context = personality_engine.get_context_prompt(server_id, external_info)
 
     return f"""{personality_context}
 
@@ -237,7 +243,7 @@ def search_google(query: str) -> str:
     return ""
 
 
-def query_model(statement: str, server_db, server_id: str) -> str | None:
+def query_model(statement: str, server_db, server_id: str, personality_engine) -> str | None:
     """Unified query function for both Ollama and Gemini."""
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
@@ -259,10 +265,10 @@ def query_model(statement: str, server_db, server_id: str) -> str | None:
         log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
         external_info = search_google(clean_stmt)
 
-    prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, external_info)
+    prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, personality_engine, external_info)
 
     # Track personality evolution
-    get_personality_engine().evolve_personality(server_id, clean_stmt)
+    personality_engine.evolve_personality(server_id, clean_stmt)
 
     if config.USE_GEMINI:
         return query_gemini_api(prompt_text, cache_key, server_db)
@@ -395,16 +401,6 @@ class GrugThinkBot(commands.Cog):
         if re.search(rf"\b{re.escape(bot_name_lower)}\b", content_lower):
             return True
 
-        # Check for common variations and nicknames (word boundaries)
-        common_names = ["grug", "grugthink"]
-        for name in common_names:
-            if re.search(rf"\b{name}\b", content_lower):
-                return True
-
-        # Check for "bot" but only when directly addressing (with punctuation)
-        if re.search(r"\bbot[,!?.]\\s]", content_lower):
-            return True
-
         # Check for @mentions of the bot user
         if self.client.user and f"<@{self.client.user.id}>" in content:
             return True
@@ -443,8 +439,7 @@ class GrugThinkBot(commands.Cog):
 
         # Remove bot name mentions to get the actual statement
         bot_name = personality.chosen_name or personality.name
-        for name_variant in [bot_name.lower(), "grug", "grugthink", "bot"]:
-            clean_content = re.sub(rf"\b{re.escape(name_variant)}\b", "", clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(rf"\b{re.escape(bot_name.lower())}\b", "", clean_content, flags=re.IGNORECASE)
 
         # Remove @mentions
         if self.client.user:
@@ -497,12 +492,14 @@ class GrugThinkBot(commands.Cog):
 
             # Run verification in executor to avoid blocking
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, query_model, clean_content, server_db, server_id)
+            result = await loop.run_in_executor(
+                None, query_model, clean_content, server_db, server_id, self.personality_engine
+            )
 
             if result:
                 # Apply personality style to response
                 styled_result = self.personality_engine.get_response_with_style(server_id, result)
-                await thinking_message.edit(content=f"🤔 {styled_result}")
+                await thinking_message.edit(content=styled_result)
 
                 log.info(
                     "Auto-verification completed",
@@ -528,7 +525,6 @@ class GrugThinkBot(commands.Cog):
             # Use personality for error message
             error_msg = self.personality_engine.get_error_message(server_id)
             await thinking_message.edit(content=f"💥 {error_msg}")
-
 
     @app_commands.command(name="verify", description="Verify the truthfulness of the previous message.")
     async def verify(self, interaction: discord.Interaction):
@@ -562,7 +558,9 @@ class GrugThinkBot(commands.Cog):
             # Get the server-specific database
             server_db = get_server_db(interaction)
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, query_model, target, server_db, server_id)
+            result = await loop.run_in_executor(
+                None, query_model, target, server_db, server_id, self.personality_engine
+            )
 
             if result:
                 # Apply personality style to response
@@ -580,7 +578,6 @@ class GrugThinkBot(commands.Cog):
             # Use personality for error message
             error_msg = self.personality_engine.get_error_message(server_id)
             await msg.edit(content=f"💥 {error_msg}")
-
 
     @app_commands.command(name="learn", description="Teach the bot a new fact.")
     @app_commands.describe(fact="The fact to learn.")
@@ -635,7 +632,6 @@ class GrugThinkBot(commands.Cog):
             else:
                 await interaction.followup.send("I already know that.", ephemeral=True)
 
-
     @app_commands.command(name="what-know", description="See all the facts the bot knows.")
     async def what_know(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
@@ -683,7 +679,6 @@ class GrugThinkBot(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-
     @app_commands.command(name="help", description="Shows what the bot can do.")
     async def help_command(self, interaction: discord.Interaction):
         # Get personality info
@@ -719,7 +714,6 @@ class GrugThinkBot(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
     @app_commands.command(name="personality", description="Shows the bot's personality information.")
     async def personality_info(self, interaction: discord.Interaction):
         # Get personality info
@@ -738,7 +732,9 @@ class GrugThinkBot(commands.Cog):
         stage_name = stage_names[min(personality_info["evolution_stage"], 3)]
 
         embed.add_field(name="Name", value=personality_info["name"], inline=True)
-        embed.add_field(name="Evolution Stage", value=f"{stage_name} ({personality_info['evolution_stage']})", inline=True)
+        embed.add_field(
+            name="Evolution Stage", value=f"{stage_name} ({personality_info['evolution_stage']})", inline=True
+        )
         embed.add_field(name="Interactions", value=str(personality_info["interaction_count"]), inline=True)
         embed.add_field(name="Style", value=personality_info["style"], inline=True)
 
@@ -759,9 +755,10 @@ def main():
 
     # Add the GrugThinkBot cog
     from unittest.mock import MagicMock
-    bot_instance_mock = MagicMock() # This will be replaced by actual instance in bot_manager
+
+    bot_instance_mock = MagicMock()  # This will be replaced by actual instance in bot_manager
     bot_instance_mock.personality_engine = get_personality_engine()
-    bot_instance_mock.db = server_manager.get_server_db("global") # Use a dummy DB for single bot mode
+    bot_instance_mock.db = server_manager.get_server_db("global")  # Use a dummy DB for single bot mode
 
     @client.event
     async def on_ready():
