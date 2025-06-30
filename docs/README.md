@@ -43,19 +43,19 @@ Simply mention the bot's name in your message:
 ### Grug (Caveman)
 ```
 User: "Grug, is water wet?"
-Grug: "Grug thinking..." → "🤔 TRUE - Grug touch water, very wet thing!"
+Grug: "Grug thinking..." → "TRUE - Grug touch water, very wet thing!"
 ```
 
 ### Big Rob (norf FC Lad)
 ```
 User: "Big Rob, is football popular in England?"  
-Big Rob: "Big Rob thinking..." → "🤔 TRUE - wot i fink: footy is life in england, nuff said"
+Big Rob: "Big Rob thinking..." → "TRUE - wot i fink: footy is life in england, nuff said"
 ```
 
 ### Adaptive (Evolving AI)
 ```
 User: "What do you think about artificial intelligence?"
-Bot: "Adaptive thinking..." → "🤔 TRUE - AI technology is rapidly advancing, that's my assessment."
+Bot: "Adaptive thinking..." → "TRUE - AI technology is rapidly advancing, that's my assessment."
 ```
 
 ## 🚀 Getting Started

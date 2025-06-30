@@ -49,11 +49,11 @@ class TestDiscordIntegration:
         interaction.guild_id = 12345
         interaction.response = AsyncMock()
         interaction.followup = AsyncMock()
-        
+
         # Mock the followup.send to return a message that can be edited
         mock_msg = AsyncMock()
         interaction.followup.send.return_value = mock_msg
-        
+
         return interaction
 
     @pytest.fixture
@@ -74,24 +74,25 @@ class TestDiscordIntegration:
         mock_personality.response_style = "caveman"
         mock_personality.chosen_name = None
         mock_personality.name = "Grug"
-        
+
         # Create mock personality engine
         mock_personality_engine = MagicMock()
         mock_personality_engine.get_personality.return_value = mock_personality
         mock_personality_engine.get_response_with_style.return_value = "TRUE - Grug say sky blue sometimes."
         mock_personality_engine.get_error_message.return_value = "Grug brain hurt. No can answer."
-        
+
         # Create mock bot instance
         mock_client = AsyncMock()
         mock_bot_instance = MagicMock()
         mock_bot_instance.personality_engine = mock_personality_engine
         mock_bot_instance.db = MagicMock()
-        
+
         with (
             patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
             patch("src.grugthink.bot.log", mock_logger),
         ):
             from src.grugthink import bot
+
             return bot.GrugThinkBot(mock_client, mock_bot_instance)
 
     @pytest.mark.asyncio
@@ -99,7 +100,7 @@ class TestDiscordIntegration:
         """Test the verify command end-to-end."""
         # Setup mock responses
         mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
-        
+
         # Mock the executor
         async def mock_executor(executor, func, *args):
             return "TRUE - Grug say sky blue sometimes."
@@ -141,13 +142,15 @@ class TestDiscordIntegration:
 
             # Verify interaction flow
             mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
-            mock_interaction.followup.send.assert_called_once_with("Grug learn: Grug love mammoth meat.", ephemeral=True)
+            mock_interaction.followup.send.assert_called_once_with(
+                "Grug learn: Grug love mammoth meat.", ephemeral=True
+            )
 
     @pytest.mark.asyncio
     async def test_rate_limiting_integration(self, bot_cog_integration, mock_interaction, mock_message):
         """Test rate limiting functionality."""
         import time
-        
+
         # Setup mock responses
         mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
 
@@ -156,7 +159,9 @@ class TestDiscordIntegration:
             await bot_cog_integration.verify.callback(bot_cog_integration, mock_interaction)
 
             # Should be rate limited
-            mock_interaction.response.send_message.assert_called_once_with("Slow down! Wait a few seconds.", ephemeral=True)
+            mock_interaction.response.send_message.assert_called_once_with(
+                "Slow down! Wait a few seconds.", ephemeral=True
+            )
 
     @pytest.mark.asyncio
     async def test_untrusted_user_learn_integration(self, bot_cog_integration, mock_interaction):
@@ -186,8 +191,6 @@ class TestDatabaseIntegration:
             patch.dict("sys.modules", {"src.grugthink.config": mock_config}),
             patch("src.grugthink.bot.log", mock_logger),
         ):
-            from src.grugthink import bot
-
             # Mock database
             mock_db = MagicMock()
             mock_db.search_facts.return_value = ["Grug know fire good.", "Grug hunt mammoth."]
@@ -207,6 +210,6 @@ class TestConfigurationIntegration:
             from src.grugthink import bot
 
             # Verify config is accessible
-            assert hasattr(bot, 'config') or mock_config.DISCORD_TOKEN == "fake_token"
+            assert hasattr(bot, "config") or mock_config.DISCORD_TOKEN == "fake_token"
             assert mock_config.TRUSTED_USER_IDS == [12345]
             assert mock_config.USE_GEMINI is True

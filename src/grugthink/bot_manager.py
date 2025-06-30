@@ -228,9 +228,7 @@ class BotManager:
             # Log initial settings for this bot instance
             log.info("Bot starting up", extra={"bot_id": bot_id, "name": config.name})
             if bot_env.get("GEMINI_API_KEY"):
-                log.info(
-                    "Using Gemini for generation", extra={"model": bot_env.get("GEMINI_MODEL", "gemma-3-27b-it")}
-                )
+                log.info("Using Gemini for generation", extra={"model": bot_env.get("GEMINI_MODEL", "gemma-3-27b-it")})
             elif bot_env.get("OLLAMA_URLS"):
                 log.info(
                     "Using Ollama for generation",
@@ -251,8 +249,7 @@ class BotManager:
 
             # Initialize personality engine with forced personality
             personality_engine = PersonalityEngine(
-                db_path=os.path.join(data_dir, "personalities.db"),
-                forced_personality=config.force_personality
+                db_path=os.path.join(data_dir, "personalities.db"), forced_personality=config.force_personality
             )
             instance.personality_engine = personality_engine
 

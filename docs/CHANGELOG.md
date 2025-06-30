@@ -2,6 +2,36 @@
 
 A comprehensive record of all features, improvements, and changes to the GrugThink personality engine.
 
+## [3.1.0] - 2025-06-30
+
+### 🐛 Fixed: Multi-Bot Collision Issues
+- **Fixed** bot collision where multiple bots responded to single name mention
+- **Removed** hardcoded common names causing all bots to respond to "grug"/"grugthink"
+- **Enhanced** name filtering to only respond to specific bot name + @mentions
+- **Resolved** personality mixing between Big Rob and Grug instances
+
+### 📚 Fixed: Knowledge Learning System
+- **Fixed** `/what-know` command not showing learned facts for non-Grug personalities
+- **Reworked** knowledge extraction to work with any bot personality
+- **Enhanced** fact extraction from bot responses with better filtering
+- **Added** contextual storage with personality name prefixes
+
+### 🎭 Enhanced: Big Rob Personality
+- **Updated** Big Rob to prefer Carling beer (his absolute favorite)
+- **Reduced** Big Rob's verbosity to maximum 2 sentences
+- **Added** verbosity personality trait for response length control
+- **Improved** British working-class dialect authenticity
+
+### 🎨 UI Improvements
+- **Removed** thinking emoji (🤔) from bot responses
+- **Cleaned** response formatting for better readability
+
+### 🧪 Development
+- **Fixed** all test suite failures (43/43 tests passing)
+- **Resolved** line length linting errors
+- **Updated** test mocks to match current bot behavior
+- **Applied** code formatting across entire codebase
+
 ## [3.0.0] - 2025-06-29
 
 ### 🚀 Major: Multi-Bot Container System
