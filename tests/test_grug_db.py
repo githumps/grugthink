@@ -1,3 +1,5 @@
+"""Database layer tests with FAISS mocking."""
+
 import importlib.util
 import pickle
 import sys

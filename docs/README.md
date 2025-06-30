@@ -72,7 +72,7 @@ docker-compose up -d
 # Manage all bots from one interface
 ```
 
-See **[MULTIBOT.md](MULTIBOT.md)** for complete multi-bot setup guide.
+See **[MULTIBOT.md](docs/MULTIBOT.md)** for complete multi-bot setup guide.
 
 ### Single Bot Deployment
 
@@ -112,7 +112,7 @@ docker-compose -f examples/docker-compose/development.yml up
 docker-compose -f docker/docker-compose.dev.yml --profile lite up
 ```
 
-See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for complete optimization guide.
+See [DOCKER_OPTIMIZATION.md](docs/DOCKER_OPTIMIZATION.md) for complete optimization guide.
 
 ### Manual Setup
 
@@ -213,8 +213,9 @@ FORCE_PERSONALITY=grug          # Options: grug, bigrob, adaptive
 PYTHONPATH=. pytest
 
 # Specific test categories
-PYTHONPATH=. pytest tests/test_bot.py      # Bot functionality
-PYTHONPATH=. pytest tests/test_personality.py  # Personality engine
+PYTHONPATH=. pytest tests/test_bot.py          # Bot functionality
+PYTHONPATH=. pytest tests/test_config.py       # Configuration handling
+PYTHONPATH=. pytest tests/test_grug_db.py      # Database layer
 PYTHONPATH=. pytest tests/test_integration.py  # End-to-end tests
 
 # Quick test run
@@ -224,18 +225,18 @@ PYTHONPATH=. pytest -q
 ## 📚 Documentation
 
 ### Core Guides
-- **[MULTIBOT.md](MULTIBOT.md)** - Multi-bot container system with web dashboard
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide for single bots
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Organized project architecture
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development setup and contribution guidelines
-- **[SECURITY.md](SECURITY.md)** - Security policy and vulnerability reporting
+- **[MULTIBOT.md](docs/MULTIBOT.md)** - Multi-bot container system with web dashboard
+- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide for single bots
+- **[PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** - Organized project architecture
+- **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Development setup and contribution guidelines
+- **[SECURITY.md](docs/SECURITY.md)** - Security policy and vulnerability reporting
 
 ### Technical References
-- **[DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md)** - Docker image size optimization
-- **[BIG_ROB_EXAMPLES.md](BIG_ROB_EXAMPLES.md)** - Big Rob personality examples
-- **[SETUP_COMPARISON.md](SETUP_COMPARISON.md)** - Setup option comparison
-- **[CLAUDE.md](CLAUDE.md)** - Development guidelines and commands
-- **[CLAUDELOG.md](CLAUDELOG.md)** - Complete development history
+- **[DOCKER_OPTIMIZATION.md](docs/DOCKER_OPTIMIZATION.md)** - Docker image size optimization
+- **[BIG_ROB_EXAMPLES.md](docs/BIG_ROB_EXAMPLES.md)** - Big Rob personality examples
+- **[SETUP_COMPARISON.md](docs/SETUP_COMPARISON.md)** - Setup option comparison
+- **[CLAUDE.md](docs/CLAUDE.md)** - Development guidelines and commands
+- **[CLAUDELOG.md](docs/CLAUDELOG.md)** - Complete development history
 
 ## 🤝 Contributing
 
@@ -247,11 +248,11 @@ PYTHONPATH=. pytest -q
 6. Push to branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ## 📄 License
 
-This project is licensed under the **PolyForm Noncommercial License 1.0.0** - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the **PolyForm Noncommercial License 1.0.0** - see the [LICENSE.md](docs/LICENSE.md) file for details.
 
 ### License Summary
 - ✅ **Noncommercial use** - Research, education, personal projects

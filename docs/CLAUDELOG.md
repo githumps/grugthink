@@ -994,3 +994,9 @@ if self.embedder is None or self.index is None or np is None:
 - Memory-bounded cache prevents DoS attacks
 - All previous security logging improvements preserved
 - No sensitive data exposure in cache or fallback modes
+### Documentation Cleanup
+- Updated test references after file restructuring
+- Added docstrings to test_bot, test_config, and test_grug_db
+
+## Session: 2025-06-30 (Update) - Documentation Link Fixes
+- Corrected README links to docs folder

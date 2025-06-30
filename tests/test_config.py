@@ -1,3 +1,5 @@
+"""Configuration validation test suite."""
+
 import os
 import sys
 from unittest.mock import patch
