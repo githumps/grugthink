@@ -458,7 +458,7 @@ async def main():
     """Main entry point for the API server."""
     # Initialize managers
     config_manager = ConfigManager()
-    bot_manager = BotManager()
+    bot_manager = BotManager(config_manager=config_manager)
 
     # Create API server
     api_server = APIServer(bot_manager, config_manager)

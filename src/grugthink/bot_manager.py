@@ -67,8 +67,9 @@ class BotInstance:
 class BotManager:
     """Manages multiple Discord bot instances."""
 
-    def __init__(self, config_file: str = "bot_configs.json"):
+    def __init__(self, config_file: str = "bot_configs.json", config_manager=None):
         self.config_file = config_file
+        self.config_manager = config_manager
         self.bots: Dict[str, BotInstance] = {}
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=10)
@@ -346,17 +347,32 @@ class BotManager:
         env["LOG_LEVEL"] = config.log_level
         env["LOAD_EMBEDDER"] = str(config.load_embedder)
 
-        # Optional API keys
+        # API keys - use bot-specific keys or fall back to global keys
         if config.gemini_api_key:
             env["GEMINI_API_KEY"] = config.gemini_api_key
+        elif self.config_manager:
+            global_gemini = self.config_manager.get_api_keys("gemini").get("primary")
+            if global_gemini:
+                env["GEMINI_API_KEY"] = global_gemini
+                
+        if config.google_api_key:
+            env["GOOGLE_API_KEY"] = config.google_api_key
+        elif self.config_manager:
+            global_google = self.config_manager.get_api_keys("google_search").get("api_key")
+            if global_google:
+                env["GOOGLE_API_KEY"] = global_google
+                
+        if config.google_cse_id:
+            env["GOOGLE_CSE_ID"] = config.google_cse_id
+        elif self.config_manager:
+            global_cse = self.config_manager.get_api_keys("google_search").get("cse_id")
+            if global_cse:
+                env["GOOGLE_CSE_ID"] = global_cse
+                
         if config.ollama_urls:
             env["OLLAMA_URLS"] = config.ollama_urls
         if config.ollama_models:
             env["OLLAMA_MODELS"] = config.ollama_models
-        if config.google_api_key:
-            env["GOOGLE_API_KEY"] = config.google_api_key
-        if config.google_cse_id:
-            env["GOOGLE_CSE_ID"] = config.google_cse_id
         if config.trusted_user_ids:
             env["TRUSTED_USER_IDS"] = config.trusted_user_ids
 

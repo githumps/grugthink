@@ -26,7 +26,7 @@ class GrugThinkContainer:
 
     def __init__(self):
         self.config_manager = ConfigManager()
-        self.bot_manager = BotManager()
+        self.bot_manager = BotManager(config_manager=self.config_manager)
         self.api_server = APIServer(self.bot_manager, self.config_manager)
 
         self.running = False
@@ -185,7 +185,7 @@ async def create_demo_configuration():
     log.info("Creating demo configuration")
 
     config_manager = ConfigManager()
-    bot_manager = BotManager()
+    bot_manager = BotManager(config_manager=config_manager)
 
     try:
         # Check if we have any Discord tokens configured
