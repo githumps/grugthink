@@ -118,6 +118,7 @@ class GrugThinkDashboard {
     // Initial data loading
     async loadInitialData() {
         await Promise.all([
+            this.loadUser(),
             this.loadDashboard(),
             this.loadBots(),
             this.loadTemplates(),
@@ -129,6 +130,7 @@ class GrugThinkDashboard {
     async apiCall(endpoint, options = {}) {
         try {
             const response = await fetch(`${this.apiBase}/api${endpoint}`, {
+                credentials: 'include', // Include session cookies
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
@@ -145,6 +147,17 @@ class GrugThinkDashboard {
             console.error('API call error:', error);
             this.showAlert('API call failed: ' + error.message, 'danger');
             throw error;
+        }
+    }
+
+    // User functions
+    async loadUser() {
+        try {
+            const user = await this.apiCall('/user');
+            document.getElementById('username').textContent = user.username;
+        } catch (error) {
+            console.error('Failed to load user:', error);
+            document.getElementById('username').textContent = 'Unknown';
         }
     }
 

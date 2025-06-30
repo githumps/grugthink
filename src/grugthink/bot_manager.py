@@ -132,14 +132,14 @@ class BotManager:
 
         return bot_id
 
-    def delete_bot(self, bot_id: str) -> bool:
+    async def delete_bot(self, bot_id: str) -> bool:
         """Delete a bot configuration."""
         if bot_id not in self.bots:
             return False
 
-        # Stop the bot if running
+        # Stop the bot if running - must await this!
         if self.bots[bot_id].config.status == "running":
-            self.stop_bot(bot_id)
+            await self.stop_bot(bot_id)
 
         with self._lock:
             del self.bots[bot_id]

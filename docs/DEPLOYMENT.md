@@ -1,359 +1,208 @@
-# GrugThink Deployment Guide
+# Deployment Guide
 
-**Deploy your personality-evolving Discord bot to production environments**
+This guide covers deploying GrugThink in production environments.
 
-This guide covers both single bot deployments and the new multi-bot container system with web dashboard management.
+## Prerequisites
 
-## 🔥 Multi-Bot Container (Latest - Recommended)
+- **Docker** and **Docker Compose** installed
+- **2GB RAM minimum** (4GB recommended for multiple bots)
+- **500MB disk space** plus storage for bot data
+- **Discord Application** with bot tokens
+- **API Keys** (optional): Gemini AI, Google Search
 
-**Deploy multiple bots with web management interface**:
+## Quick Deployment
 
-The primary `docker-compose.yml` in the root of the repository is configured to use the pre-built image from GitHub Container Registry.
+### 1. Configuration
 
 ```bash
-# Clone repository
-git clone https://github.com/githumps/grugthink.git
+# Clone the repository
+git clone https://github.com/your-org/grugthink.git
 cd grugthink
 
-# Create required .env file
-cp .env.example .env
-# --> EDIT .env with your DISCORD_TOKEN and other secrets <--
+# Create configuration file
+cp grugthink_config.yaml.example grugthink_config.yaml
+```
 
-# Create required data directories and configs
-mkdir -p data
-touch grugthink_config.yaml bot_configs.json
+Edit `grugthink_config.yaml` with your Discord tokens and API keys:
 
-# Pull the latest image
-docker-compose pull
+```yaml
+api_keys:
+  discord:
+    tokens:
+      - name: "My Bot"
+        token: "YOUR_DISCORD_BOT_TOKEN"
+        active: true
+  gemini:
+    primary: "YOUR_GEMINI_API_KEY"  # Optional
+  google_search:
+    api_key: "YOUR_GOOGLE_API_KEY"  # Optional
+    cse_id: "YOUR_CSE_ID"           # Optional
+```
 
-# Start the multi-bot container
+### 2. Deploy
+
+```bash
+# Start the service
 docker-compose up -d
+
+# Check logs
+docker logs grugthink
+
+# Access web dashboard
+open http://localhost:8080
 ```
 
-To build from source, see the [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+## Production Configuration
 
-**Features:**
-- Web dashboard for post-launch configuration
-- Multiple bot instances with different personalities
-- Real-time monitoring and management
-- Dynamic environment variable updates
-- Centralized API key management
+### Environment Variables
 
-See **[MULTIBOT.md](MULTIBOT.md)** for complete multi-bot deployment guide.
+Configure through `docker-compose.yml` or environment:
 
-## 🚀 Single Bot Deployment
-
-### Prerequisites
-- Docker and Docker Compose installed
-- Discord bot token
-- Gemini API key or Ollama instance
-
-### Deployment Steps
-
-1. **Clone Repository**:
-   ```bash
-   git clone https://github.com/githumps/grugthink.git
-   cd grugthink
-   ```
-
-2. **Configure Environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your tokens and configuration
-   ```
-
-3. **Create Data Directory**:
-   ```bash
-   mkdir grug-data
-   ```
-
-4. **Choose Deployment Type**:
-   
-   **Lightweight (Recommended - 401MB)**:
-   ```bash
-   docker-compose -f docker-compose.dev.yml --profile lite up -d
-   ```
-   
-   **Production with Semantic Search (1.06GB)**:
-   ```bash
-   docker-compose -f docker-compose.dev.yml --profile optimized up -d
-   ```
-   
-   **Standard Deployment**:
-   ```bash
-   docker-compose up -d
-   ```
-
-5. **Verify Deployment**:
-   ```bash
-   docker-compose logs -f
-   ```
-
-### Stop and Update
-```bash
-# Stop bot
-docker-compose down
-
-# Update and restart
-git pull
-docker-compose pull
-docker-compose up -d
-```
-
-## 🐳 Docker Run (Manual)
-
-If you prefer direct Docker commands:
-
-**Lightweight Version**:
-```bash
-docker run -d \
-  --name grugthink-lite \
-  --env-file .env \
-  -e LOAD_EMBEDDER=False \
-  -v "$(pwd)/grug-data:/data" \
-  ghcr.io/githumps/grugthink:latest-lite
-```
-
-**Full Version**:
-```bash
-docker run -d \
-  --name grugthink \
-  --env-file .env \
-  -v "$(pwd)/grug-data:/data" \
-  ghcr.io/githumps/grugthink:latest
-```
-
-## 🏗️ Build from Source
-
-### Development Build
-```bash
-# Lightweight build (fast)
-docker build -f Dockerfile.lite -t grugthink:lite .
-
-# Optimized build (balanced)
-docker build -f Dockerfile.optimized -t grugthink:optimized .
-
-# Full build (complete features)
-docker build -f Dockerfile -t grugthink:full .
-```
-
-### Size Comparison
-```bash
-# Build all variants and compare
-./build-docker.sh
-```
-
-Expected results:
-- **Lite**: ~401MB (no ML dependencies)
-- **Optimized**: ~1.06GB (ML with cleanup)
-- **Original**: ~1.31GB (full development)
-
-## ⚙️ Configuration
-
-### Required Environment Variables
-
-| Variable | Description | Example |
+| Variable | Description | Default |
 |----------|-------------|---------|
-| `DISCORD_TOKEN` | Discord bot token | `your_discord_token_here` |
-| `GEMINI_API_KEY` | Gemini API key (OR configure Ollama) | `your_gemini_key_here` |
-| `TRUSTED_USER_IDS` | Discord user IDs for `/learn` command | `123456789,987654321` |
+| `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | `INFO` |
+| `GRUGBOT_DATA_DIR` | Data storage directory | `/data` |
+| `LOAD_EMBEDDER` | Enable ML embeddings (true/false) | `true` |
 
-### Optional Configuration
+### Security Considerations
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOAD_EMBEDDER` | `True` | Enable semantic search (set `False` for lite) |
-| `GRUGBOT_VARIANT` | `prod` | Bot variant (`prod` or `dev`) |
-| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`) |
-| `GRUGBOT_DATA_DIR` | `.` | Data directory (use `/data` in Docker) |
-| `FORCE_PERSONALITY` | `None` | Force specific personality (`grug`, `big_rob`, `adaptive`) |
-
-### Search and AI Configuration
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `GOOGLE_API_KEY` | Google Search API key (optional) | `your_google_api_key` |
-| `GOOGLE_CSE_ID` | Google Custom Search Engine ID | `your_cse_id` |
-| `OLLAMA_URLS` | Ollama server URLs (comma-separated) | `http://localhost:11434` |
-| `OLLAMA_MODELS` | Ollama models to use | `llama3.2:3b,mixtral` |
-
-### Example .env File
-```bash
-# Required
-DISCORD_TOKEN=your_discord_token_here
-GEMINI_API_KEY=your_gemini_api_key_here
-TRUSTED_USER_IDS=123456789,987654321
-
-# Docker configuration
-GRUGBOT_DATA_DIR=/data
-
-# Optional features
-LOAD_EMBEDDER=True
-GOOGLE_API_KEY=your_google_api_key
-GOOGLE_CSE_ID=your_cse_id
-
-# Personality configuration
-FORCE_PERSONALITY=grug          # Options: grug, big_rob, adaptive (optional)
-
-# Logging
-LOG_LEVEL=INFO
-GRUGBOT_VARIANT=prod
-```
-
-## 🔄 Release Management
-
-### Automated Releases
-
-GrugThink uses GitHub Actions for automated builds and releases:
-
-1. **Development Builds**: Automatic builds on every push to `main`
-2. **Release Candidates**: Tagged pre-releases (`v1.1.0-rc1`)
-3. **Stable Releases**: Tagged stable releases (`v1.1.0`)
-
-### Creating a Release
-
-**Pre-release (Beta Testing)**:
-```bash
-git tag -a v2.1.0-rc1 -m "Release candidate for v2.1.0"
-git push origin v2.1.0-rc1
-```
-
-**Stable Release**:
-```bash
-# Ensure main branch is ready
-git checkout main
-git pull origin main
-
-# Run tests
-PYTHONPATH=. pytest
-
-# Create release tag
-git tag -a v2.1.0 -m "Release v2.1.0: Enhanced personality system"
-git push origin v2.1.0
-```
-
-GitHub Actions will automatically:
-- Build Docker images for all variants
-- Push to GitHub Container Registry
-- Create GitHub release with changelogs
-- Update `latest` tags
-
-### Image Tags
-
-| Tag Pattern | Description | Example |
-|-------------|-------------|---------|
-| `latest` | Latest stable release | `ghcr.io/githumps/grugthink:latest` |
-| `latest-lite` | Latest lightweight build | `ghcr.io/githumps/grugthink:latest-lite` |
-| `latest-optimized` | Latest optimized build | `ghcr.io/githumps/grugthink:latest-optimized` |
-| `v2.1.0` | Specific version | `ghcr.io/githumps/grugthink:v2.1.0` |
-| `v2.1.0-rc1` | Release candidate | `ghcr.io/githumps/grugthink:v2.1.0-rc1` |
-
-## 🔧 Production Considerations
+1. **Secure Token Storage**: Store Discord tokens in `grugthink_config.yaml` with restricted file permissions
+2. **Network Security**: Use reverse proxy (nginx) for HTTPS in production
+3. **Data Encryption**: Mount `/data` volume with encryption for sensitive bot data
+4. **Access Control**: Restrict web dashboard access using firewall rules
 
 ### Resource Requirements
 
-| Deployment Type | RAM | CPU | Storage | Network |
-|-----------------|-----|-----|---------|---------|
-| **Lite** | 128MB | 0.1 CPU | 1GB | Low |
-| **Optimized** | 1GB | 0.5 CPU | 2GB | Medium |
-| **Full** | 2GB | 1 CPU | 3GB | Medium |
+| Deployment | RAM | CPU | Storage |
+|------------|-----|-----|---------|
+| Single Bot | 1GB | 1 vCPU | 200MB |
+| Multiple Bots (2-5) | 2GB | 2 vCPU | 500MB |
+| High Volume (5+) | 4GB | 4 vCPU | 1GB |
 
-### Security
+## Scaling
 
-- **Environment Variables**: Store sensitive data in `.env` files, not in code
-- **Volume Permissions**: Ensure Docker has write access to data directory
-- **Network**: Bot only needs outbound HTTPS access (Discord, APIs)
-- **Updates**: Regularly update to latest stable releases
+### Horizontal Scaling
 
-### Monitoring
+For high-volume deployments, run multiple instances:
 
-**Health Check**:
-```bash
-# Check if bot is responding
-docker-compose ps
-docker-compose logs --tail 50
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+services:
+  grugthink-1:
+    image: grugthink:latest
+    ports: ["8080:8080"]
+    environment:
+      - INSTANCE_ID=1
+  
+  grugthink-2:
+    image: grugthink:latest
+    ports: ["8081:8080"]
+    environment:
+      - INSTANCE_ID=2
 ```
 
-**Resource Usage**:
-```bash
-# Monitor resource consumption
-docker stats grugthink
+### Load Balancing
+
+Use nginx for load balancing multiple instances:
+
+```nginx
+upstream grugthink {
+    server localhost:8080;
+    server localhost:8081;
+}
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+    
+    location / {
+        proxy_pass http://grugthink;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
 ```
 
-**Logs**:
-```bash
-# View logs
-docker-compose logs -f grugthink
+## Monitoring
 
-# Export logs
-docker-compose logs grugthink > grugthink.log
+### Health Checks
+
+Monitor service health using built-in endpoints:
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Bot status
+curl http://localhost:8080/api/system/stats
 ```
 
-### Backup and Recovery
+### Logs
 
-**Data Backup**:
+Access logs for debugging:
+
 ```bash
-# Backup personality and knowledge data
-tar -czf grugthink-backup-$(date +%Y%m%d).tar.gz grug-data/
+# Follow logs in real-time
+docker logs -f grugthink
+
+# View specific timeframe
+docker logs grugthink --since="2025-01-01T10:00:00"
 ```
 
-**Restore from Backup**:
+### Metrics
+
+The dashboard provides real-time metrics:
+- Bot status and uptime
+- Message processing rates
+- Personality evolution statistics
+- Resource usage
+
+## Backup and Recovery
+
+### Data Backup
+
 ```bash
-# Stop bot
-docker-compose down
+# Backup bot data
+docker run --rm -v grugthink_data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/grugthink-backup-$(date +%Y%m%d).tar.gz /data
 
 # Restore data
-tar -xzf grugthink-backup-YYYYMMDD.tar.gz
-
-# Restart bot
-docker-compose up -d
+tar xzf grugthink-backup-20250101.tar.gz
+docker run --rm -v grugthink_data:/data -v $(pwd):/backup alpine \
+  cp -r backup/data/* /data/
 ```
 
-### Scaling
+### Configuration Backup
 
-For multiple servers or high load:
+```bash
+# Backup configuration
+cp grugthink_config.yaml grugthink_config.yaml.backup
+cp bot_configs.json bot_configs.json.backup
+```
 
-1. **Use lightweight images** to reduce resource usage
-2. **Disable semantic search** (`LOAD_EMBEDDER=False`) if not needed
-3. **Monitor memory usage** - each server gets its own personality/database
-4. **Consider horizontal scaling** with multiple bot instances for different server groups
-
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-**Bot won't start**:
-```bash
-# Check logs for errors
-docker-compose logs grugthink
+**Bot not connecting to Discord**:
+- Verify Discord token in `grugthink_config.yaml`
+- Check Discord application permissions
+- Review logs: `docker logs grugthink`
 
-# Verify environment variables
-docker-compose config
-```
+**Web dashboard not accessible**:
+- Ensure port 8080 is not blocked by firewall
+- Check container status: `docker ps`
+- Verify Docker port mapping
 
-**Permission errors**:
-```bash
-# Fix data directory permissions
-sudo chown -R $(id -u):$(id -g) grug-data/
-```
-
-**Memory issues**:
-```bash
-# Switch to lite version
-docker-compose -f docker-compose.dev.yml --profile lite up -d
-```
-
-**API rate limits**:
-- Check Discord token is valid
-- Verify Gemini API key has quota
-- Monitor usage in respective dashboards
+**High memory usage**:
+- Disable embeddings with `LOAD_EMBEDDER=false`
+- Reduce concurrent bots
+- Monitor with `docker stats grugthink`
 
 ### Support
 
-- **Documentation**: Check other `.md` files in the repository
-- **Issues**: Create GitHub issues for bugs or feature requests
-- **Logs**: Always include relevant log output when reporting issues
-
----
-
-**Ready to deploy your evolving Discord personality? Choose your deployment type and get started!** 🚀
+For additional support:
+- [GitHub Issues](https://github.com/your-org/grugthink/issues)
+- [Security Issues](docs/SECURITY.md)
+- [Contributing Guide](docs/CONTRIBUTING.md)

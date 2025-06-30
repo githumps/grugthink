@@ -21,7 +21,22 @@ GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
 # --- GrugBot Configuration ---
 DATA_DIR = os.getenv("GRUGBOT_DATA_DIR", os.path.dirname(__file__))
-DB_PATH = os.path.join(DATA_DIR, "grug_lore.db")
+
+
+# Create unique database path based on Discord token to prevent memory sharing between bot instances
+def _get_unique_db_path():
+    if DISCORD_TOKEN:
+        # Create a short hash of the Discord token for database isolation
+        import hashlib
+
+        token_hash = hashlib.sha256(DISCORD_TOKEN.encode()).hexdigest()[:12]
+        return os.path.join(DATA_DIR, f"grug_lore_{token_hash}.db")
+    else:
+        # Fallback for multi-bot mode or when token not available
+        return os.path.join(DATA_DIR, "grug_lore.db")
+
+
+DB_PATH = _get_unique_db_path()
 GRUGBOT_VARIANT = os.getenv("GRUGBOT_VARIANT", "prod")
 TRUSTED_USER_IDS = [int(uid) for uid in os.getenv("TRUSTED_USER_IDS", "").split(",") if uid.strip()]
 

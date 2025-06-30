@@ -1,12 +1,72 @@
 # GrugThink Changelog
 
 A comprehensive record of all features, improvements, and changes to the GrugThink personality engine.
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Major Simplification
+- **Unified architecture**: Removed single-bot deployment methods, simplified to multi-bot Docker only
+- **Streamlined Docker**: Single Dockerfile and docker-compose.yml for all deployments
+- **Documentation cleanup**: Removed redundant docs, focused on essential guides
+- **Project structure**: Cleaned up directories and removed unnecessary complexity
+
+### Fixed
+- **Memory isolation**: Fixed critical bug where multiple Discord bot instances shared memories by implementing unique database paths based on Discord token hash
+- **Command truncation**: Fixed `/what-know` command getting cut off by implementing proper Discord embed field limits (1024 characters)
+- **Logging timestamps**: Added timestamps to log output for better debugging
+- **Bot deletion bug**: Fixed critical issue where deleting bot configs via web interface didn't stop running bot instances, causing persistent double responses
+
+### Changed
+- Database paths now include token hash for isolation (e.g., `grug_lore_a1b2c3d4e5f6.db`)
+- `/what-know` command now shows "Facts (Showing X of Y)" when truncated
+- Log format now includes timestamps: `YYYY-MM-DD HH:MM:SS - module - LEVEL - message`
+- Bot deletion via web interface now properly awaits bot shutdown before removing config
+- Single Docker deployment method with web dashboard management
+
+### Technical
+- Consolidated Docker structure: removed single-bot, lite, optimized variants
+- Simplified project structure and removed redundant examples
+- Updated `src/grugthink/config.py` to generate unique database paths
+- Rewrote `/what-know` command truncation logic in `src/grugthink/bot.py`
+- Enhanced logging configuration with timestamp formatting
+- Fixed async/await bug in `bot_manager.py` delete_bot function
+- Updated API server to properly await bot deletion
+- All tests passing (43 passed, 1 skipped)
 
 - Updated documentation for moved test files
 - Fixed broken documentation links in README.md
 - Added module docstrings to remaining test modules
+
+## [3.2.0] - 2025-06-30
+
+### 🔧 Fixed: Memory Isolation
+- **Fixed** memory sharing between bots in same Discord server
+- **Updated** bot architecture to use server-specific databases per Discord guild
+- **Enhanced** single/multi-bot compatibility with proper fallbacks
+
+### 📊 Enhanced: Command Interface
+- **Improved** `/what-know` command with smart pagination for large memory lists
+- **Added** Discord message limit handling for memory display
+- **Enhanced** fact truncation with personality-appropriate messages
+
+### 🎨 Fixed: Web Dashboard
+- **Fixed** navbar/sidebar overlap in multi-bot web interface
+- **Added** user display and logout functionality in navigation
+- **Enhanced** CSS layout with proper spacing and responsive design
+
+### 🐳 Fixed: Docker Container
+- **Fixed** FastAPI import errors preventing container startup
+- **Added** missing dependencies for session middleware
+- **Updated** OAuth configuration for custom domains
+
+### 🔐 Enhanced: Authentication
+- **Fixed** Discord OAuth redirect URI handling for custom domains
+- **Added** automatic login redirect for unauthenticated users
+- **Enhanced** session management and user info display
 
 ## [3.1.0] - 2025-06-30
 

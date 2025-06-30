@@ -26,10 +26,10 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.sessions import SessionMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
 from .bot_manager import BotManager
 from .config_manager import ConfigManager
@@ -171,16 +171,21 @@ class APIServer:
                 raise HTTPException(status_code=401, detail="Not authenticated")
             return user
 
-        def admin_required(request: Request = Depends(get_current_user)) -> Dict[str, Any]:
+        def admin_required(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
             trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
             trusted = [t.strip() for t in trusted if t.strip()]
-            if request.session["user"]["id"] not in trusted:
+            if user["id"] not in trusted:
                 raise HTTPException(status_code=403, detail="Forbidden")
-            return request.session["user"]
+            return user
 
         # Dashboard route
         @self.app.get("/")
-        async def dashboard():
+        async def dashboard(request: Request):
+            # Check if user is authenticated
+            user = request.session.get("user")
+            if not user:
+                return RedirectResponse("/login")
+
             try:
                 return FileResponse("web/index.html")
             except Exception:
@@ -234,6 +239,14 @@ class APIServer:
         async def logout(request: Request):
             request.session.clear()
             return RedirectResponse("/")
+
+        @self.app.get("/api/user")
+        async def get_user(request: Request):
+            """Get current authenticated user info."""
+            user = request.session.get("user")
+            if not user:
+                raise HTTPException(status_code=401, detail="Not authenticated")
+            return user
 
         # Bot management routes
         @self.app.get("/api/bots", response_model=List[Dict[str, Any]], dependencies=[Depends(admin_required)])
@@ -339,7 +352,7 @@ class APIServer:
         async def delete_bot(bot_id: str):
             """Delete a bot instance."""
             try:
-                success = self.bot_manager.delete_bot(bot_id)
+                success = await self.bot_manager.delete_bot(bot_id)
                 if not success:
                     raise HTTPException(status_code=404, detail="Bot not found")
 

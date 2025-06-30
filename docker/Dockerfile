@@ -20,8 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 COPY grugthink.py .
 COPY pyproject.toml ./
-COPY docker/multi-bot/web/ web/
-COPY docker/multi-bot/init-config.sh /usr/local/bin/init-config.sh
+COPY docker/web/ web/
+COPY docker/init-config.sh /usr/local/bin/init-config.sh
 
 # Create directories for data
 RUN mkdir -p /data

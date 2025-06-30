@@ -1,201 +1,236 @@
-# Contributing to GrugThink
+# Contributing Guide
 
-Thank you for your interest in contributing to GrugThink! This guide will help you get started with contributing to our adaptable Discord personality engine.
+Thank you for contributing to GrugThink! This guide will help you get started with development.
 
-## Before You Start
+## Quick Setup
 
-*   **Discuss major changes first:** For significant features or architectural changes, please create a GitHub issue to discuss your proposal before starting work. This prevents duplicate effort and ensures alignment with project goals.
+### Prerequisites
+- **Python 3.11+**
+- **Docker & Docker Compose**
+- **Git**
 
-## Development Setup
-
-### Quick Setup Options
-
-**Multi-Bot Development (Latest)**:
-```bash
-# Start multi-bot container for development
-docker-compose -f examples/docker-compose/development.yml up -d
-# Access web dashboard at http://localhost:8080
-```
-*Includes web dashboard, live code reload, and multiple bot instances*
-
-**Lightweight Development**:
-```bash
-chmod +x scripts/setup-codex.sh
-./scripts/setup-codex.sh
-```
-*Uses mocked ML dependencies for fast testing*
-
-**Full Development Environment**:
-```bash
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-```
-*Includes semantic search capabilities*
-
-### Manual Setup
-
-1.  **Clone Repository:**
-    ```bash
-    git clone https://github.com/githumps/grugthink.git
-    cd grugthink
-    ```
-
-2.  **Create Virtual Environment:**
-    ```bash
-    python3.11 -m venv venv
-    source venv/bin/activate
-    ```
-
-3.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt -r requirements-dev.txt
-    ```
-
-4.  **Configure Environment:**
-    ```bash
-    cp .env.example .env
-    # Edit .env with your test Discord token and set GRUGBOT_VARIANT=dev
-    ```
-
-5.  **Run Bot:**
-    ```bash
-    # Single bot mode
-    python grugthink.py
-    
-    # Multi-bot container mode  
-    python grugthink.py multi-bot
-    ```
-
-## Testing
-
-Ensure all tests pass before submitting changes:
+### Development Environment
 
 ```bash
-# Run all tests
-PYTHONPATH=. pytest
+# Clone repository
+git clone https://github.com/your-org/grugthink.git
+cd grugthink
 
-# Run specific test categories
-PYTHONPATH=. pytest tests/test_bot.py          # Bot functionality
-PYTHONPATH=. pytest tests/test_config.py       # Configuration handling
-PYTHONPATH=. pytest tests/test_grug_db.py      # Database layer
-PYTHONPATH=. pytest tests/test_integration.py  # End-to-end tests
+# Create Python virtual environment
+python3.11 -m venv venv
+source venv/bin/activate
 
-# Quick test run
-PYTHONPATH=. pytest -q
+# Install dependencies
+pip install -r requirements.txt -r requirements-dev.txt
+
+# Copy configuration
+cp grugthink_config.yaml.example grugthink_config.yaml
+# Edit with your Discord tokens and API keys
 ```
 
-**Test Coverage**: All 44 tests should pass (100% success rate)
+### Run Tests
 
-## Code Quality
-
-Maintain code quality with linting and formatting:
-
-```bash
-# Check for issues
-ruff check .
-
-# Auto-fix issues
-ruff check . --fix
-
-# Format code
-ruff format .
-
-# Complete development check
-ruff check . --fix && ruff format . && PYTHONPATH=. pytest
-```
-
-## Contributing Process
-
-### 1. Create Feature Branch
-```bash
-git checkout -b feature/your-feature-name
-```
-
-### 2. Make Your Changes
-- Follow existing code patterns and personality engine architecture
-- Add comprehensive tests for new functionality
-- Update documentation if needed
-
-### 3. Commit Changes
-Use clear, descriptive commit messages:
-```bash
-git add .
-git commit -m "feat: Add new personality template system"
-git commit -m "fix: Resolve memory leak in response cache"
-git commit -m "docs: Update deployment guide with Docker variants"
-```
-
-### 4. Test Everything
 ```bash
 # Run full test suite
-ruff check . --fix && ruff format . && PYTHONPATH=. pytest
+PYTHONPATH=. pytest
+
+# Run with coverage
+PYTHONPATH=. pytest --cov=src --cov-report=html
+
+# Run specific test module
+PYTHONPATH=. pytest tests/test_bot.py
 ```
 
-### 5. Push Changes
+### Start Development Server
+
 ```bash
-git push origin feature/your-feature-name
+# Start with Docker (recommended)
+docker-compose up -d
+
+# Or run locally
+python grugthink.py multi-bot
+
+# Access dashboard at http://localhost:8080
 ```
 
-### 6. Create Pull Request
-- Provide clear description of changes and motivation
-- Reference any related issues
-- Include test results and any breaking changes
+## Development Workflow
 
-## Development Guidelines
+### Code Quality
 
-### Multi-Bot Container System
-- Test changes in multi-bot environment: `docker-compose -f examples/docker-compose/development.yml up -d`
-- Use web dashboard at http://localhost:8080 for testing different bot configurations
-- Ensure new features work with both single and multi-bot deployments
-- Follow REST API patterns in `src/grugthink/api_server.py` for new endpoints
-- Update bot templates in `src/grugthink/config_manager.py` for new personality options
+Before submitting changes, ensure code quality:
 
-### Personality System
-- New personality templates should extend the existing PersonalityTemplate class
-- Maintain personality isolation between Discord servers
-- Follow evolution stage progression (Initial → Developing → Established → Evolved)
+```bash
+# Format and lint code
+ruff check . --fix
+ruff format .
 
-### Code Style
-- Follow existing patterns for Discord command handling
-- Use personality-aware responses throughout the bot
-- Maintain backward compatibility when possible
-- Add comprehensive docstrings for new methods
+# Run tests
+PYTHONPATH=. pytest
 
-### Testing
-- Write unit tests for individual components
-- Add integration tests for Discord interactions
-- Ensure all new features have test coverage
-- Mock heavy dependencies appropriately
+# All checks must pass before committing
+```
 
-### Documentation
-- Update relevant .md files for new features
-- Include examples in personality documentation
-- Update deployment guides for new configuration options
+### Project Structure
 
-## Types of Contributions
+```
+grugthink/
+├── src/grugthink/          # Main Python package
+│   ├── bot.py              # Discord bot implementation
+│   ├── bot_manager.py      # Multi-bot orchestration
+│   ├── api_server.py       # Web API and dashboard
+│   ├── personality_engine.py # Personality system
+│   └── grug_db.py          # Database and embeddings
+├── docker/                 # Docker configuration
+├── tests/                  # Test suite
+├── docs/                   # Documentation
+└── web/                    # Web dashboard files
+```
 
-### Features
-- New personality templates
-- Enhanced evolution mechanics
-- Additional Discord commands
-- Performance optimizations
+### Testing Guidelines
 
-### Bug Fixes
-- Personality system bugs
-- Discord interaction issues
-- Memory leaks or performance problems
-- Test failures
+#### Test Categories
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: End-to-end workflows
+- **API Tests**: REST endpoint validation
 
-### Documentation
-- API documentation improvements
-- Deployment guide updates
-- Example additions
-- Troubleshooting guides
+#### Writing Tests
+- Focus on behavior, not implementation details
+- Use meaningful test names: `test_bot_responds_to_mentions`
+- Mock external dependencies (Discord API, ML models)
+- Maintain 90%+ test coverage
 
-### Infrastructure
-- CI/CD improvements
-- Docker optimization
-- Dependency updates
-- Security enhancements
+#### Example Test Structure
+```python
+def test_personality_evolution():
+    """Test that personality evolves after sufficient interactions."""
+    engine = PersonalityEngine("test.db")
+    personality = engine.get_personality("test_server")
+    
+    # Simulate interactions
+    for _ in range(51):  # Trigger evolution at 50 interactions
+        engine.record_interaction("test_server", "verification")
+    
+    evolved = engine.get_personality("test_server")
+    assert evolved.evolution_stage > personality.evolution_stage
+```
 
-Thank you for contributing to GrugThink! 🚀
+## Architecture Guidelines
+
+### Multi-Bot System
+- **BotManager**: Orchestrates multiple bot instances
+- **APIServer**: Provides REST API and web dashboard
+- **PersonalityEngine**: Manages server-specific personalities
+- **GrugDB**: Handles knowledge storage and retrieval
+
+### Best Practices
+
+#### Code Style
+- Follow PEP 8 conventions
+- Use type hints for function signatures
+- Write docstrings for public methods
+- Keep functions focused and testable
+
+#### Error Handling
+- Log errors with structured logging
+- Graceful degradation for optional features
+- User-friendly error messages in web interface
+
+#### Security
+- Never log sensitive data (tokens, API keys)
+- Validate all user inputs
+- Use parameterized database queries
+- Secure session management for web dashboard
+
+### Adding New Features
+
+#### Personality Templates
+```python
+# Add new personality in personality_engine.py
+PERSONALITY_TEMPLATES["new_type"] = PersonalityTemplate(
+    name="New Character",
+    response_style="new_style",
+    base_context="Character background...",
+    speaking_patterns=["pattern1", "pattern2"],
+    quirks=["quirk1", "quirk2"]
+)
+```
+
+#### API Endpoints
+```python
+# Add endpoint in api_server.py
+@self.app.get("/api/new-feature")
+async def new_feature():
+    """New API endpoint documentation."""
+    return {"status": "success", "data": {}}
+```
+
+#### Discord Commands
+```python
+# Add command in bot.py
+@app_commands.command(name="new-command")
+async def new_command(self, interaction: discord.Interaction):
+    """New Discord command."""
+    await interaction.response.send_message("Response")
+```
+
+## Contribution Types
+
+### Bug Reports
+- Use GitHub issue templates
+- Include reproduction steps
+- Provide system information and logs
+- Test with latest version
+
+### Feature Requests
+- Describe use case and benefits
+- Consider impact on existing functionality
+- Provide implementation suggestions if possible
+
+### Pull Requests
+1. **Fork** the repository
+2. **Create** feature branch from `main`
+3. **Implement** changes with tests
+4. **Ensure** all tests pass and code is formatted
+5. **Submit** pull request with clear description
+
+#### Pull Request Checklist
+- [ ] Code follows style guidelines
+- [ ] Tests added for new functionality
+- [ ] All existing tests pass
+- [ ] Documentation updated if needed
+- [ ] No breaking changes (or clearly documented)
+
+## Documentation
+
+### Updating Documentation
+- Update relevant `.md` files for feature changes
+- Include code examples for new APIs
+- Update deployment guides for configuration changes
+- Keep README.md current with major features
+
+### Documentation Standards
+- Use clear, concise language
+- Include practical examples
+- Maintain consistent formatting
+- Link between related documents
+
+## Community Guidelines
+
+### Code of Conduct
+- Be respectful and inclusive
+- Focus on constructive feedback
+- Help others learn and grow
+- Follow project maintainer decisions
+
+### Communication
+- Use GitHub issues for bug reports and feature requests
+- Join discussions with constructive input
+- Ask questions if implementation details are unclear
+
+## Getting Help
+
+- **GitHub Issues**: Bug reports and feature requests
+- **Security Issues**: See [SECURITY.md](SECURITY.md)
+- **Development Questions**: Create GitHub discussion
+
+Thank you for contributing to GrugThink! 🤖

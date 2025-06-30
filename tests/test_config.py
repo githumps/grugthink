@@ -125,6 +125,9 @@ def test_default_values(monkeypatch):
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_MODELS", raising=False)
     monkeypatch.delenv("GRUGBOT_DATA_DIR", raising=False)
+    monkeypatch.delenv("DISCORD_TOKEN", raising=False)  # Ensure no token for default path
+    # Set multibot mode to skip Discord token validation
+    monkeypatch.setenv("GRUGTHINK_MULTIBOT_MODE", "true")
 
     config = _reload_config()
     assert config.GRUGBOT_VARIANT == "prod"
@@ -132,6 +135,7 @@ def test_default_values(monkeypatch):
     assert config.TRUSTED_USER_IDS == []
     assert config.GEMINI_MODEL == "gemini-pro"
     assert config.OLLAMA_MODELS == ["llama3.2:3b"]  # Default if OLLAMA_MODELS not set but OLLAMA_URLS is
+    # With no DISCORD_TOKEN, should use fallback path ending with "grug_lore.db"
     assert config.DB_PATH.endswith("grug_lore.db")
     # Check that DB_PATH is within the src/grugthink directory
     assert os.path.abspath(os.path.dirname(config.DB_PATH)) == os.path.abspath(

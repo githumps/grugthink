@@ -102,7 +102,11 @@ def log_initial_settings():
     import logging
 
     log_level = getattr(logging, config.LOG_LEVEL_STR, logging.INFO)
-    logging.basicConfig(level=log_level)
+
+    # Configure logging with timestamps and better formatting
+    logging.basicConfig(
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
     log.info("GrugThink personality engine is starting up...")
     if config.USE_GEMINI:
@@ -736,62 +740,59 @@ class GrugThinkBot(commands.Cog):
             title = f"Knowledge Base ({server_name})"
             description = f"I know {len(all_facts)} facts:"
 
-        # Limit facts to fit in Discord message/embed limits
-        MAX_FACTS_PER_MESSAGE = 15
-        MAX_TOTAL_LENGTH = 900  # Leave room for numbering and formatting
+        # Discord embed field value limit is 1024 characters
+        MAX_FIELD_LENGTH = 950  # Leave margin for formatting
+        MAX_FACT_LENGTH = 100  # Max length per individual fact
 
-        if len(all_facts) <= MAX_FACTS_PER_MESSAGE:
-            # Small list - show all facts
-            fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
+        # Build fact list that respects Discord embed limits
+        fact_lines = []
+        current_length = 0
+        facts_shown = 0
 
-            # Ensure total length fits
-            if len(fact_list) > MAX_TOTAL_LENGTH:
-                # Truncate individual facts if needed
-                truncated_facts = []
-                current_length = 0
-                for i, fact in enumerate(all_facts):
-                    max_fact_length = 80  # Max length per fact
-                    truncated_fact = fact[:max_fact_length] + "..." if len(fact) > max_fact_length else fact
-                    fact_line = f"{i + 1}. {truncated_fact}"
+        for i, fact in enumerate(all_facts):
+            # Truncate long facts
+            display_fact = fact[:MAX_FACT_LENGTH] + "..." if len(fact) > MAX_FACT_LENGTH else fact
+            fact_line = f"{i + 1}. {display_fact}"
 
-                    if current_length + len(fact_line) + 1 > MAX_TOTAL_LENGTH:
-                        break
+            # Check if adding this fact would exceed Discord's embed field limit
+            new_length = current_length + len(fact_line) + 1  # +1 for newline
+            if new_length > MAX_FIELD_LENGTH:
+                break
 
-                    truncated_facts.append(fact_line)
-                    current_length += len(fact_line) + 1
+            fact_lines.append(fact_line)
+            current_length = new_length
+            facts_shown += 1
 
-                fact_list = "\n".join(truncated_facts)
-                if len(truncated_facts) < len(all_facts):
-                    fact_list += f"\n... and {len(all_facts) - len(truncated_facts)} more"
+        # Create the fact list string
+        fact_list = "\n".join(fact_lines)
 
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=discord.Color.blue(),
-            )
-            embed.add_field(name="Facts", value=fact_list, inline=False)
+        # Add truncation notice if not all facts were shown
+        if facts_shown < len(all_facts):
+            remaining = len(all_facts) - facts_shown
+            truncation_notice = f"\n\n... and {remaining} more fact{'s' if remaining != 1 else ''}"
 
-        else:
-            # Large list - show first few and summary
-            first_facts = all_facts[:MAX_FACTS_PER_MESSAGE]
-            fact_list = "\n".join(
-                f"{i + 1}. {fact[:60]}{'...' if len(fact) > 60 else ''}" for i, fact in enumerate(first_facts)
-            )
-            fact_list += f"\n\n... and {len(all_facts) - MAX_FACTS_PER_MESSAGE} more facts."
-
-            if personality.response_style == "caveman":
-                fact_list += f"\n\n{bot_name} brain too full to show all!"
-            elif personality.response_style == "british_working_class":
-                fact_list += "\n\ntoo much to show all at once, innit"
+            # Ensure truncation notice fits within limit
+            if len(fact_list) + len(truncation_notice) <= MAX_FIELD_LENGTH:
+                fact_list += truncation_notice
             else:
-                fact_list += "\n\nList truncated due to length."
+                # Remove last fact to make room for truncation notice
+                if fact_lines:
+                    fact_lines.pop()
+                    facts_shown -= 1
+                    remaining = len(all_facts) - facts_shown
+                    fact_list = (
+                        "\n".join(fact_lines) + f"\n\n... and {remaining} more fact{'s' if remaining != 1 else ''}"
+                    )
 
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=discord.Color.blue(),
-            )
-            embed.add_field(name="Facts (Showing Recent)", value=fact_list, inline=False)
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=discord.Color.blue(),
+        )
+
+        # Use appropriate field name based on whether facts were truncated
+        field_name = "Facts" if facts_shown == len(all_facts) else f"Facts (Showing {facts_shown} of {len(all_facts)})"
+        embed.add_field(name=field_name, value=fact_list or "No facts to display", inline=False)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
