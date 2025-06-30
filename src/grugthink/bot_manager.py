@@ -214,8 +214,14 @@ class BotManager:
             config.status = "starting"
             log.info("Starting bot", extra={"bot_id": bot_id, "name": config.name})
 
-            # Create bot-specific environment
+            # Create bot-specific environment and set it immediately
             bot_env = self._create_bot_environment(config)
+            
+            # Set environment variables before importing any bot modules
+            original_env = {}
+            for key, value in bot_env.items():
+                original_env[key] = os.environ.get(key)
+                os.environ[key] = value
 
             # Initialize bot components
             data_dir = os.path.join(config.data_dir, bot_id)
@@ -262,6 +268,17 @@ class BotManager:
         except Exception as e:
             config.status = "error"
             log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
+            
+            # Restore original environment variables on error
+            try:
+                for key, value in original_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            except:
+                pass  # Don't let env cleanup crash the error handling
+                
             return False
 
     async def stop_bot(self, bot_id: str) -> bool:

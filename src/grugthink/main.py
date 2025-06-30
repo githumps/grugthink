@@ -8,6 +8,7 @@ graceful shutdown, and coordination between the API server and bot instances.
 
 import argparse
 import asyncio
+import os
 import signal
 import sys
 from typing import Any, Dict
@@ -150,6 +151,9 @@ class GrugThinkContainer:
 
 async def main():
     """Main entry point."""
+    # Set multi-bot mode flag to skip single-bot config validation
+    os.environ["GRUGTHINK_MULTIBOT_MODE"] = "true"
+    
     parser = argparse.ArgumentParser(description="GrugThink Multi-Bot Container")
     parser.add_argument("--no-auto-start", action="store_true", help="Don't automatically start configured bots")
     parser.add_argument("--api-port", type=int, default=8080, help="Port for the management API (default: 8080)")

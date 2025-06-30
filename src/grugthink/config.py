@@ -3,7 +3,10 @@ import re
 
 # --- Discord Configuration ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-if not DISCORD_TOKEN:
+
+# Only validate Discord token in single-bot mode (when not in multi-bot container)
+# Multi-bot mode will set environment variables dynamically per bot instance
+if not DISCORD_TOKEN and not os.getenv("GRUGTHINK_MULTIBOT_MODE"):
     raise ValueError("Missing DISCORD_TOKEN")
 
 # --- LLM Configuration ---
