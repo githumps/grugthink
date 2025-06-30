@@ -159,7 +159,10 @@ class APIServer:
                 # Retrieve the actual Discord token using the token ID
                 discord_token = self.config_manager.get_discord_token_by_id(request.discord_token_id)
                 if not discord_token:
-                    raise HTTPException(status_code=400, detail=f"Discord token with ID '{request.discord_token_id}' not found or inactive.")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Discord token with ID '{request.discord_token_id}' not found or inactive.",
+                    )
 
                 # Create bot environment from template
                 self.config_manager.create_bot_env(request.template_id, discord_token, **request.custom_env)

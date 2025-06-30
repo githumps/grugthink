@@ -62,6 +62,7 @@ class BotInstance:
     thread: Optional[threading.Thread] = None
     task: Optional[asyncio.Task] = None
     last_heartbeat: float = None
+    forced_personality: Optional[str] = None
 
 
 class BotManager:
@@ -217,19 +218,24 @@ class BotManager:
 
             # Create bot-specific environment and set it immediately
             bot_env = self._create_bot_environment(config)
-            
+
             # Set environment variables before importing any bot modules
             original_env = {}
             for key, value in bot_env.items():
                 original_env[key] = os.environ.get(key)
                 os.environ[key] = value
-                
+
             # Log initial settings for this bot instance
             log.info("Bot starting up", extra={"bot_id": bot_id, "name": config.name})
             if bot_env.get("GEMINI_API_KEY"):
-                log.info("Using Gemini for generation", extra={"model": bot_env.get("GEMINI_MODEL", "gemini-1.5-flash")})
+                log.info(
+                    "Using Gemini for generation", extra={"model": bot_env.get("GEMINI_MODEL", "gemma-3-27b-it")}
+                )
             elif bot_env.get("OLLAMA_URLS"):
-                log.info("Using Ollama for generation", extra={"urls": bot_env.get("OLLAMA_URLS"), "models": bot_env.get("OLLAMA_MODELS")})
+                log.info(
+                    "Using Ollama for generation",
+                    extra={"urls": bot_env.get("OLLAMA_URLS"), "models": bot_env.get("OLLAMA_MODELS")},
+                )
             if bot_env.get("GOOGLE_API_KEY"):
                 log.info("Google Search is enabled.")
             else:
@@ -244,14 +250,18 @@ class BotManager:
             os.makedirs(data_dir, exist_ok=True)
 
             # Initialize personality engine with forced personality
-            personality_engine = PersonalityEngine(db_path=os.path.join(data_dir, "personalities.db"))
+            personality_engine = PersonalityEngine(
+                db_path=os.path.join(data_dir, "personalities.db"),
+                forced_personality=config.force_personality
+            )
             instance.personality_engine = personality_engine
+
+            # Store the forced personality for this bot instance
+            instance.forced_personality = config.force_personality
 
             # Initialize database
             db = GrugDB(
-                db_path=os.path.join(data_dir, "facts.db"), 
-                server_id=bot_id, 
-                load_embedder=config.load_embedder
+                db_path=os.path.join(data_dir, "facts.db"), server_id=bot_id, load_embedder=config.load_embedder
             )
             instance.db = db
 
@@ -270,7 +280,7 @@ class BotManager:
 
             # Give it a moment to start
             await asyncio.sleep(2)
-            
+
             # Check if the task failed
             if instance.task.done():
                 exception = instance.task.exception()
@@ -290,7 +300,7 @@ class BotManager:
         except Exception as e:
             config.status = "error"
             log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
-            
+
             # Restore original environment variables on error
             try:
                 for key, value in original_env.items():
@@ -298,9 +308,9 @@ class BotManager:
                         os.environ.pop(key, None)
                     else:
                         os.environ[key] = value
-            except:
+            except Exception:
                 pass  # Don't let env cleanup crash the error handling
-                
+
             return False
 
     async def stop_bot(self, bot_id: str) -> bool:
@@ -369,24 +379,24 @@ class BotManager:
             global_gemini = self.config_manager.get_api_keys("gemini").get("primary")
             if global_gemini:
                 env["GEMINI_API_KEY"] = global_gemini
-                
+
         # Gemini model configuration - use from .env file or default
         env["GEMINI_MODEL"] = os.getenv("GEMINI_MODEL", "gemma-3-27b-it")
-                
+
         if config.google_api_key:
             env["GOOGLE_API_KEY"] = config.google_api_key
         elif self.config_manager:
             global_google = self.config_manager.get_api_keys("google_search").get("api_key")
             if global_google:
                 env["GOOGLE_API_KEY"] = global_google
-                
+
         if config.google_cse_id:
             env["GOOGLE_CSE_ID"] = config.google_cse_id
         elif self.config_manager:
             global_cse = self.config_manager.get_api_keys("google_search").get("cse_id")
             if global_cse:
                 env["GOOGLE_CSE_ID"] = global_cse
-                
+
         if config.ollama_urls:
             env["OLLAMA_URLS"] = config.ollama_urls
         if config.ollama_models:
@@ -405,20 +415,20 @@ class BotManager:
     async def _setup_bot_commands(self, instance: BotInstance, env: Dict[str, str]):
         """Setup Discord commands for a bot instance."""
         client = instance.client
-        
+
         @client.event
         async def on_ready():
             try:
                 # Import and add the GrugThinkBot cog after client is ready
                 from .bot import GrugThinkBot
-                
+
                 # Add the GrugThinkBot cog with proper instance
                 await client.add_cog(GrugThinkBot(client, instance))
-                
+
                 # Sync commands after adding cog
                 await client.tree.sync()
-                
-                instance.config.status = "running" # Update status to running
+
+                instance.config.status = "running"  # Update status to running
                 instance.last_heartbeat = time.time()
                 log.info(
                     "Bot connected to Discord and commands synced",

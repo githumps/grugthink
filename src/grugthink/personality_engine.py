@@ -69,13 +69,22 @@ class PersonalityState:
 class PersonalityEngine:
     """Manages bot personalities across Discord servers."""
 
-    def __init__(self, db_path: str = "personalities.db"):
+    def __init__(self, db_path: str = "personalities.db", forced_personality: Optional[str] = None):
         self.db_path = db_path
+        self.forced_personality = forced_personality  # Bot-specific forced personality
         self.personalities: Dict[str, PersonalityState] = {}
         self.templates = self._load_personality_templates()
         self.lock = threading.Lock()
         self._init_db()
         self._load_all_personalities()
+        
+        # Debug logging
+        print(f"🔍 PersonalityEngine INIT: db_path={db_path}, forced_personality={forced_personality}")
+        log.info("PersonalityEngine initialized", extra={
+            "db_path": db_path, 
+            "forced_personality": forced_personality,
+            "loaded_personalities": len(self.personalities)
+        })
 
     def _init_db(self):
         """Initialize personality storage database."""
@@ -272,16 +281,75 @@ based on your experiences in this specific Discord server.""",
         server_id = str(server_id)
 
         with self.lock:
+            log.info("Getting personality", extra={
+                "server_id": server_id, 
+                "forced_personality": self.forced_personality,
+                "existing_in_memory": server_id in self.personalities
+            })
+            
+            # If we have a forced personality, always recreate to ensure it's applied
+            if self.forced_personality and server_id in self.personalities:
+                current_personality = self.personalities[server_id]
+                expected_name = self._get_expected_personality_name()
+                
+                log.info("Checking personality match", extra={
+                    "server_id": server_id,
+                    "current_name": current_personality.name,
+                    "current_style": current_personality.response_style,
+                    "expected_name": expected_name,
+                    "forced_personality": self.forced_personality
+                })
+                
+                if (expected_name and 
+                    current_personality.name.lower() != expected_name.lower()):
+                    log.info("Forced personality differs from stored, recreating", 
+                            extra={"server_id": server_id, "current": current_personality.name, 
+                                   "forced": self.forced_personality})
+                    # Remove the old personality so it gets recreated
+                    del self.personalities[server_id]
+                    
             if server_id not in self.personalities:
-                log.info("Creating new personality for server", extra={"server_id": server_id})
+                log.info("Creating new personality for server", 
+                        extra={"server_id": server_id, "forced_personality": self.forced_personality})
                 self._create_new_personality(server_id)
 
-            return self.personalities[server_id]
+            final_personality = self.personalities[server_id]
+            print(f"🔍 RETURNING PERSONALITY: name={final_personality.name}, style={final_personality.response_style}, forced={self.forced_personality}")
+            log.info("Returning personality", extra={
+                "server_id": server_id,
+                "name": final_personality.name,
+                "response_style": final_personality.response_style,
+                "forced_was": self.forced_personality
+            })
+            
+            return final_personality
+
+    def _get_expected_personality_name(self) -> Optional[str]:
+        """Get the expected personality name based on forced personality."""
+        forced_personality = self.forced_personality or os.getenv("FORCE_PERSONALITY", "")
+        if not forced_personality:
+            return None
+            
+        forced_personality = forced_personality.lower()
+        personality_aliases = {"big_rob": "bigrob", "biggrob": "bigrob", "rob": "bigrob"}
+        resolved_personality = personality_aliases.get(forced_personality, forced_personality)
+        
+        if resolved_personality in self.templates:
+            return self.templates[resolved_personality].name
+        return None
+    
+    def _get_expected_response_style(self, personality_name: str) -> Optional[str]:
+        """Get expected response style for a personality name."""
+        for template in self.templates.values():
+            if template.name.lower() == personality_name.lower():
+                return template.response_style
+        return None
 
     def _create_new_personality(self, server_id: str):
         """Create a new personality for a server."""
-        # Check for forced personality via environment variable
-        forced_personality = os.getenv("FORCE_PERSONALITY", "").lower()
+        # Check for bot-level forced personality first, then environment variable
+        forced_personality = self.forced_personality or os.getenv("FORCE_PERSONALITY", "")
+        forced_personality = forced_personality.lower() if forced_personality else ""
 
         # Handle common aliases for personality names
         personality_aliases = {"big_rob": "bigrob", "biggrob": "bigrob", "rob": "bigrob"}
