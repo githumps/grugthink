@@ -185,12 +185,20 @@ class BotManager:
             "last_heartbeat": instance.last_heartbeat,
             "guild_count": 0,
             "user_count": 0,
+            "guild_ids": [],
+            "user_ids": [],
         }
 
         # Add runtime info if bot is running
         if instance.client and instance.client.is_ready():
-            status["guild_count"] = len(instance.client.guilds)
-            status["user_count"] = sum(guild.member_count for guild in instance.client.guilds)
+            status["guild_ids"] = [g.id for g in instance.client.guilds]
+            users = set()
+            for g in instance.client.guilds:
+                for m in getattr(g, "members", []):
+                    users.add(m.id)
+            status["user_ids"] = list(users)
+            status["guild_count"] = len(status["guild_ids"])
+            status["user_count"] = len(users)
             status["latency"] = round(instance.client.latency * 1000, 2)  # ms
 
         return status
@@ -265,6 +273,8 @@ class BotManager:
             # Create Discord client
             intents = discord.Intents.default()
             intents.message_content = True
+            intents.guilds = True
+            intents.members = True
 
             client = commands.Bot(command_prefix="/", intents=intents, loop=asyncio.get_running_loop())
             instance.client = client

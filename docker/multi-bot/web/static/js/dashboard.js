@@ -373,9 +373,10 @@ class GrugThinkDashboard {
                     <div class="token-meta">Added: ${new Date(token.added_at * 1000).toLocaleDateString()}</div>
                 </div>
                 <div>
-                    <span class="badge ${token.active ? 'bg-success' : 'bg-secondary'}">
-                        ${token.active ? 'Active' : 'Inactive'}
-                    </span>
+                    <span class="badge ${token.active ? 'bg-success' : 'bg-secondary'}">${token.active ? 'Active' : 'Inactive'}</span>
+                    <button class="btn btn-sm btn-danger ms-2" onclick="dashboard.deleteDiscordToken('${token.id}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </div>
             `;
             container.appendChild(item);
@@ -409,6 +410,18 @@ class GrugThinkDashboard {
             this.loadTokens();
         } catch (error) {
             this.showAlert('Failed to add Discord token', 'danger');
+        }
+    }
+
+    async deleteDiscordToken(tokenId) {
+        if (!confirm('Delete this token?')) return;
+
+        try {
+            await this.apiCall(`/discord-tokens/${tokenId}`, { method: 'DELETE' });
+            this.showAlert('Token removed', 'success');
+            this.loadTokens();
+        } catch (error) {
+            this.showAlert('Failed to remove token', 'danger');
         }
     }
 
@@ -609,6 +622,7 @@ class GrugThinkDashboard {
 // Global functions for onclick handlers
 window.createBot = () => dashboard.createBot();
 window.refreshDashboard = () => dashboard.refreshDashboard();
+window.deleteToken = (id) => dashboard.deleteDiscordToken(id);
 
 // Initialize dashboard when page loads
 let dashboard;
