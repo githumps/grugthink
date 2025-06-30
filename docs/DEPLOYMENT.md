@@ -8,17 +8,29 @@ This guide covers both single bot deployments and the new multi-bot container sy
 
 **Deploy multiple bots with web management interface**:
 
+The primary `docker-compose.yml` in the root of the repository is configured to use the pre-built image from GitHub Container Registry.
+
 ```bash
 # Clone repository
 git clone https://github.com/githumps/grugthink.git
 cd grugthink
 
-# Start multi-bot container with web dashboard
-docker-compose -f docker-compose.multibot.yml up -d
+# Create required .env file
+cp .env.example .env
+# --> EDIT .env with your DISCORD_TOKEN and other secrets <--
 
-# Access web dashboard
-open http://localhost:8080
+# Create required data directories and configs
+mkdir -p data
+touch grugthink_config.yaml bot_configs.json
+
+# Pull the latest image
+docker-compose pull
+
+# Start the multi-bot container
+docker-compose up -d
 ```
+
+To build from source, see the [CONTRIBUTING.md](CONTRIBUTING.md) guide.
 
 **Features:**
 - Web dashboard for post-launch configuration

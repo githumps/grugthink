@@ -62,14 +62,24 @@ Bot: "Adaptive thinking..." → "TRUE - AI technology is rapidly advancing, that
 
 ### 🔥 Multi-Bot Container (Recommended)
 
-**Run multiple bots with web dashboard**:
+**Run multiple bots with web dashboard using the pre-built image**:
 ```bash
-# Quick start with web management interface
+# 1. Clone the repository
+git clone https://github.com/githumps/grugthink.git
+cd grugthink
+
+# 2. Create your environment file
+cp .env.example .env
+# --> EDIT .env with your DISCORD_TOKEN and other secrets <--
+
+# 3. Create required files and directories
+mkdir -p data
+touch grugthink_config.yaml bot_configs.json
+
+# 4. Pull and run the container
 docker-compose up -d
 
 # Access web dashboard at http://localhost:8080
-# Create Pure Grug, Pure Big Rob, and Evolution bots
-# Manage all bots from one interface
 ```
 
 See **[MULTIBOT.md](MULTIBOT.md)** for complete multi-bot setup guide.

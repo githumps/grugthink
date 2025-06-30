@@ -399,8 +399,26 @@ class GrugThinkBot(commands.Cog):
         self.client = client
         self.bot_instance = bot_instance
         self.personality_engine = bot_instance.personality_engine
-        self.server_db = bot_instance.db
+        self.server_manager = getattr(bot_instance, "server_manager", None)
         self.tree = client.tree
+
+    def get_server_db(self, interaction_or_guild_id):
+        """Get the appropriate database for a Discord interaction or guild ID."""
+        if self.server_manager:
+            # Multi-bot mode: use the server manager
+            if hasattr(interaction_or_guild_id, "guild_id"):
+                # It's a Discord interaction
+                guild_id = interaction_or_guild_id.guild_id
+            elif hasattr(interaction_or_guild_id, "guild") and interaction_or_guild_id.guild:
+                # It's a Discord message with guild
+                guild_id = interaction_or_guild_id.guild.id
+            else:
+                # It's a guild ID directly, or a DM
+                guild_id = interaction_or_guild_id
+            return self.server_manager.get_server_db(guild_id)
+        else:
+            # Single-bot mode: fallback to the global server manager
+            return get_server_db(interaction_or_guild_id)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -539,7 +557,7 @@ class GrugThinkBot(commands.Cog):
 
         try:
             # Get the server-specific database
-            server_db = get_server_db(message.guild.id if message.guild else "dm")
+            server_db = self.get_server_db(message.guild.id if message.guild else "dm")
 
             # Run verification in executor to avoid blocking
             loop = asyncio.get_running_loop()
@@ -607,7 +625,7 @@ class GrugThinkBot(commands.Cog):
 
         try:
             # Get the server-specific database
-            server_db = get_server_db(interaction)
+            server_db = self.get_server_db(interaction)
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None, query_model, target, server_db, server_id, self.personality_engine
@@ -659,7 +677,7 @@ class GrugThinkBot(commands.Cog):
             return
 
         # Get the server-specific database
-        server_db = get_server_db(interaction)
+        server_db = self.get_server_db(interaction)
         if server_db.add_fact(fact):
             log.info(
                 "Fact learned",
@@ -693,7 +711,7 @@ class GrugThinkBot(commands.Cog):
         bot_name = personality.chosen_name or personality.name
 
         # Get the server-specific database
-        server_db = get_server_db(interaction)
+        server_db = self.get_server_db(interaction)
         all_facts = server_db.get_all_facts()
 
         if not all_facts:
@@ -704,9 +722,6 @@ class GrugThinkBot(commands.Cog):
             else:
                 await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
             return
-
-        # Format facts into a numbered list
-        fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
 
         # Create a Discord embed for better formatting
         server_name = interaction.guild.name if interaction.guild else "DM"
@@ -721,12 +736,62 @@ class GrugThinkBot(commands.Cog):
             title = f"Knowledge Base ({server_name})"
             description = f"I know {len(all_facts)} facts:"
 
-        embed = discord.Embed(
-            title=title,
-            description=description,
-            color=discord.Color.blue(),
-        )
-        embed.add_field(name="Facts", value=fact_list[:1024], inline=False)  # Embed field value limit is 1024
+        # Limit facts to fit in Discord message/embed limits
+        MAX_FACTS_PER_MESSAGE = 15
+        MAX_TOTAL_LENGTH = 900  # Leave room for numbering and formatting
+
+        if len(all_facts) <= MAX_FACTS_PER_MESSAGE:
+            # Small list - show all facts
+            fact_list = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(all_facts))
+
+            # Ensure total length fits
+            if len(fact_list) > MAX_TOTAL_LENGTH:
+                # Truncate individual facts if needed
+                truncated_facts = []
+                current_length = 0
+                for i, fact in enumerate(all_facts):
+                    max_fact_length = 80  # Max length per fact
+                    truncated_fact = fact[:max_fact_length] + "..." if len(fact) > max_fact_length else fact
+                    fact_line = f"{i + 1}. {truncated_fact}"
+
+                    if current_length + len(fact_line) + 1 > MAX_TOTAL_LENGTH:
+                        break
+
+                    truncated_facts.append(fact_line)
+                    current_length += len(fact_line) + 1
+
+                fact_list = "\n".join(truncated_facts)
+                if len(truncated_facts) < len(all_facts):
+                    fact_list += f"\n... and {len(all_facts) - len(truncated_facts)} more"
+
+            embed = discord.Embed(
+                title=title,
+                description=description,
+                color=discord.Color.blue(),
+            )
+            embed.add_field(name="Facts", value=fact_list, inline=False)
+
+        else:
+            # Large list - show first few and summary
+            first_facts = all_facts[:MAX_FACTS_PER_MESSAGE]
+            fact_list = "\n".join(
+                f"{i + 1}. {fact[:60]}{'...' if len(fact) > 60 else ''}" for i, fact in enumerate(first_facts)
+            )
+            fact_list += f"\n\n... and {len(all_facts) - MAX_FACTS_PER_MESSAGE} more facts."
+
+            if personality.response_style == "caveman":
+                fact_list += f"\n\n{bot_name} brain too full to show all!"
+            elif personality.response_style == "british_working_class":
+                fact_list += "\n\ntoo much to show all at once, innit"
+            else:
+                fact_list += "\n\nList truncated due to length."
+
+            embed = discord.Embed(
+                title=title,
+                description=description,
+                color=discord.Color.blue(),
+            )
+            embed.add_field(name="Facts (Showing Recent)", value=fact_list, inline=False)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -809,7 +874,7 @@ def main():
 
     bot_instance_mock = MagicMock()  # This will be replaced by actual instance in bot_manager
     bot_instance_mock.personality_engine = get_personality_engine()
-    bot_instance_mock.db = server_manager.get_server_db("global")  # Use a dummy DB for single bot mode
+    bot_instance_mock.server_manager = server_manager  # Use the global server manager for single bot mode
 
     @client.event
     async def on_ready():

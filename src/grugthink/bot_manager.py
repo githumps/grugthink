@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 import discord
 from discord.ext import commands
 
-from .grug_db import GrugDB
+from .grug_db import GrugServerManager
 from .grug_structured_logger import get_logger
 from .personality_engine import PersonalityEngine
 
@@ -58,7 +58,7 @@ class BotInstance:
     config: BotConfig
     client: Optional[commands.Bot] = None
     personality_engine: Optional[PersonalityEngine] = None
-    db: Optional[GrugDB] = None
+    server_manager: Optional[GrugServerManager] = None
     thread: Optional[threading.Thread] = None
     task: Optional[asyncio.Task] = None
     last_heartbeat: float = None
@@ -264,11 +264,11 @@ class BotManager:
             # Store the forced personality for this bot instance
             instance.forced_personality = config.force_personality
 
-            # Initialize database
-            db = GrugDB(
-                db_path=os.path.join(data_dir, "facts.db"), server_id=bot_id, load_embedder=config.load_embedder
+            # Initialize server manager for this bot (each bot gets its own data directory)
+            server_manager = GrugServerManager(
+                base_db_path=os.path.join(data_dir, "facts.db"), model_name="all-MiniLM-L6-v2"
             )
-            instance.db = db
+            instance.server_manager = server_manager
 
             # Create Discord client
             intents = discord.Intents.default()
