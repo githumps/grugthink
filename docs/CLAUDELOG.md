@@ -92,6 +92,30 @@ The changes ensure:
 5. `/what-know` command properly shows accumulated facts
 6. Big Rob knows Carling is his favorite beer and keeps responses brief
 
+#### 6. Fixed GitHub Actions Docker Build (`.github/workflows/release.yml`)
+- **Root cause**: Workflow tried to build from root but no Dockerfile exists there
+- **Solution**: Added `file: docker/multi-bot/Dockerfile.multibot` to specify correct Dockerfile
+- **Enhancements**: Added multi-architecture builds (amd64/arm64) and build caching
+- **Updated**: Action versions for security (checkout@v4, etc.)
+
+#### Technical Implementation ✅
+```yaml
+# BEFORE - failed build
+- name: Build and Push Docker Image
+  uses: docker/build-push-action@v5
+  with:
+    context: .  # Missing dockerfile specification
+    
+# AFTER - working build
+- name: Build and Push Docker Image
+  uses: docker/build-push-action@v5
+  with:
+    context: .
+    file: docker/multi-bot/Dockerfile.multibot  # Explicit path
+    platforms: linux/amd64,linux/arm64         # Multi-arch
+    cache-from: type=gha                        # Build caching
+```
+
 ## Session: 2025-06-28 (Update 3) - Transform to Personality-Agnostic Engine
 
 ### Major Transformation: From "Grugbot" to "GrugThink"

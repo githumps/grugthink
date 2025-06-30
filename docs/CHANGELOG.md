@@ -32,6 +32,13 @@ A comprehensive record of all features, improvements, and changes to the GrugThi
 - **Updated** test mocks to match current bot behavior
 - **Applied** code formatting across entire codebase
 
+### 🚀 CI/CD Improvements
+- **Fixed** GitHub Actions Docker build failure (missing Dockerfile specification)
+- **Updated** release workflow to use correct multi-bot Dockerfile path
+- **Added** multi-architecture builds (linux/amd64, linux/arm64)
+- **Enhanced** Docker build caching for faster CI builds
+- **Updated** action versions for better security and compatibility
+
 ## [3.0.0] - 2025-06-29
 
 ### 🚀 Major: Multi-Bot Container System
