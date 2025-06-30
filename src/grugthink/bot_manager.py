@@ -226,14 +226,18 @@ class BotManager:
             instance.personality_engine = personality_engine
 
             # Initialize database
-            db = GrugDB(db_path=os.path.join(data_dir, "facts.db"), load_embedder=config.load_embedder)
+            db = GrugDB(
+                db_path=os.path.join(data_dir, "facts.db"), 
+                server_id=bot_id, 
+                load_embedder=config.load_embedder
+            )
             instance.db = db
 
             # Create Discord client
             intents = discord.Intents.default()
             intents.message_content = True
 
-            client = commands.Bot(command_prefix="/", intents=intents)
+            client = commands.Bot(command_prefix="/", intents=intents, loop=asyncio.get_running_loop())
             instance.client = client
 
             # Import and setup bot commands (we'll need to modularize the existing bot.py)
@@ -341,14 +345,17 @@ class BotManager:
 
     async def _setup_bot_commands(self, instance: BotInstance, env: Dict[str, str]):
         """Setup Discord commands for a bot instance."""
-        # This will need to import and setup commands from a modularized bot.py
-        # For now, we'll create a placeholder that sets up basic verification
-
+        # Import and add the GrugThinkBot cog
+        from .bot import GrugThinkBot
+        
         client = instance.client
-        personality_engine = instance.personality_engine
+        
+        # Add the GrugThinkBot cog with proper instance
+        await client.add_cog(GrugThinkBot(client, instance))
 
         @client.event
         async def on_ready():
+            instance.config.status = "running" # Update status to running
             instance.last_heartbeat = time.time()
             log.info(
                 "Bot connected to Discord",
@@ -358,34 +365,6 @@ class BotManager:
                     "guild_count": len(client.guilds),
                 },
             )
-
-        @client.tree.command(name="verify", description="Verify the truthfulness of the last message")
-        async def verify(interaction: discord.Interaction):
-            # Basic verification command - this would be expanded with full bot logic
-            await interaction.response.send_message("🤔 Bot verification system active!")
-
-        @client.tree.command(name="personality", description="View personality evolution status")
-        async def personality_cmd(interaction: discord.Interaction):
-            try:
-                personality = personality_engine.get_personality(str(interaction.guild_id))
-                embed = discord.Embed(
-                    title=f"🎭 {personality.chosen_name or personality.name} Personality Status", color=0x00FF00
-                )
-                embed.add_field(name="Evolution Stage", value=f"Stage {personality.evolution_stage}/3", inline=True)
-                embed.add_field(name="Interactions", value=str(personality.interaction_count), inline=True)
-                embed.add_field(name="Response Style", value=personality.response_style, inline=True)
-
-                await interaction.response.send_message(embed=embed)
-
-            except Exception as e:
-                await interaction.response.send_message(f"❌ Error checking personality: {str(e)}")
-
-        # Sync commands
-        try:
-            synced = await client.tree.sync()
-            log.info("Commands synced", extra={"bot_id": instance.config.bot_id, "command_count": len(synced)})
-        except Exception as e:
-            log.error("Failed to sync commands", extra={"bot_id": instance.config.bot_id, "error": str(e)})
 
     async def start_all_bots(self):
         """Start all configured bots."""
