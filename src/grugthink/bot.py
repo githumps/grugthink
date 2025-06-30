@@ -211,17 +211,62 @@ def is_rate_limited(user_id: int) -> bool:
     return False
 
 
-def extract_lore_from_response(response: str, server_db):
-    """Extract and save new lore to Grug's brain."""
+def extract_lore_from_response(response: str, server_db, personality_name: str = None):
+    """Extract and save new lore to bot's brain."""
     try:
-        lore_sentences = re.findall(r"[^.!?]*\bGrug\b[^.!?]*[.!?]", response, re.IGNORECASE)
+        # Extract all sentences from the response after TRUE/FALSE verdict
+        # Split on TRUE/FALSE and take everything after the dash
+        parts = re.split(r"\b(TRUE|FALSE)\s*[-–—:]\s*", response, flags=re.IGNORECASE)
+        if len(parts) >= 3:
+            # Extract the explanation part after TRUE/FALSE -
+            explanation = parts[2].strip()
+            lore_sentences = re.findall(r"[^.!?]+[.!?]", explanation)
+        else:
+            # Fallback: extract all sentences
+            lore_sentences = re.findall(r"[^.!?]+[.!?]", response)
+
         for sentence in lore_sentences:
             sentence_clean = sentence.strip().capitalize()
-            if sentence_clean and len(sentence_clean) > 15 and not sentence_clean.startswith(("TRUE", "FALSE")):
-                if server_db.add_fact(sentence_clean):
-                    log.info("New lore learned", extra={"lore": sentence_clean})
+            if sentence_clean and len(sentence_clean) > 15:
+                # Skip generic/filler phrases but allow meaningful content
+                skip_phrases = ["simple as", "nuff said", "end of", "innit"]
+                if any(sentence_clean.lower().strip().endswith(skip) for skip in skip_phrases):
+                    continue
+                if sentence_clean.lower().strip() in skip_phrases:
+                    continue
+
+                # Skip if it's just filler words
+                filler_words = [
+                    "the",
+                    "a",
+                    "an",
+                    "is",
+                    "are",
+                    "was",
+                    "were",
+                    "of",
+                    "for",
+                    "to",
+                    "in",
+                    "on",
+                    "it",
+                    "that",
+                    "this",
+                ]
+                meaningful_words = [word for word in sentence_clean.lower().split() if word not in filler_words]
+                if len(meaningful_words) < 3:
+                    continue
+
+                # Add context about who said it if we have personality name
+                if personality_name and personality_name.lower() not in sentence_clean.lower():
+                    contextual_sentence = f"{personality_name} says: {sentence_clean}"
                 else:
-                    log.info("Lore already known", extra={"lore": sentence_clean})
+                    contextual_sentence = sentence_clean
+
+                if server_db.add_fact(contextual_sentence):
+                    log.info("New lore learned", extra={"lore": contextual_sentence})
+                else:
+                    log.info("Lore already known", extra={"lore": contextual_sentence})
     except Exception as e:
         log.error("Error extracting lore", extra={"error": str(e)})
 
@@ -270,13 +315,17 @@ def query_model(statement: str, server_db, server_id: str, personality_engine) -
     # Track personality evolution
     personality_engine.evolve_personality(server_id, clean_stmt)
 
+    # Get personality name for lore extraction
+    personality = personality_engine.get_personality(server_id)
+    personality_name = personality.chosen_name or personality.name
+
     if config.USE_GEMINI:
-        return query_gemini_api(prompt_text, cache_key, server_db)
+        return query_gemini_api(prompt_text, cache_key, server_db, personality_name)
     else:
-        return query_ollama_api(prompt_text, cache_key, server_db)
+        return query_ollama_api(prompt_text, cache_key, server_db, personality_name)
 
 
-def query_ollama_api(prompt_text: str, cache_key: str, server_db=None) -> str | None:
+def query_ollama_api(prompt_text: str, cache_key: str, server_db=None, personality_name: str = None) -> str | None:
     log.info("Querying Ollama with integrated prompt")
     for idx, url in enumerate(config.OLLAMA_URLS):
         raw_model = config.OLLAMA_MODELS[idx] if idx < len(config.OLLAMA_MODELS) else config.OLLAMA_MODELS[0]
@@ -290,7 +339,7 @@ def query_ollama_api(prompt_text: str, cache_key: str, server_db=None) -> str | 
             r = session.post(f"{url}/api/generate", json=payload, timeout=60)
             if r.status_code == 200:
                 response = r.json().get("response", "").strip()
-                validated = validate_and_process_response(response, cache_key, server_db)
+                validated = validate_and_process_response(response, cache_key, server_db, personality_name)
                 if validated:
                     return validated
         except requests.exceptions.RequestException as e:
@@ -298,7 +347,7 @@ def query_ollama_api(prompt_text: str, cache_key: str, server_db=None) -> str | 
     return None
 
 
-def query_gemini_api(prompt_text: str, cache_key: str, server_db=None) -> str | None:
+def query_gemini_api(prompt_text: str, cache_key: str, server_db=None, personality_name: str = None) -> str | None:
     log.info("Querying Gemini with integrated prompt")
     try:
         import google.generativeai as genai
@@ -306,7 +355,7 @@ def query_gemini_api(prompt_text: str, cache_key: str, server_db=None) -> str | 
         genai.configure(api_key=config.GEMINI_API_KEY)
         model = genai.GenerativeModel(model_name=config.GEMINI_MODEL)
         resp = model.generate_content(prompt_text, stream=False, generation_config={"temperature": 0.3, "top_p": 0.5})
-        validated = validate_and_process_response(resp.text, cache_key, server_db)
+        validated = validate_and_process_response(resp.text, cache_key, server_db, personality_name)
         if validated:
             return validated
     except Exception as e:
@@ -314,7 +363,9 @@ def query_gemini_api(prompt_text: str, cache_key: str, server_db=None) -> str | 
     return None
 
 
-def validate_and_process_response(response: str, cache_key: str, server_db=None) -> str | None:
+def validate_and_process_response(
+    response: str, cache_key: str, server_db=None, personality_name: str = None
+) -> str | None:
     """Centralized response validation and processing."""
     response = response.split("<END>")[0].strip()
     log.info("Raw response from model", extra={"response": response[:200]})
@@ -336,7 +387,7 @@ def validate_and_process_response(response: str, cache_key: str, server_db=None)
                 if len(full_response.split()) >= 4 and len(full_response) >= 20:
                     response_cache.put(cache_key, full_response)
                     if server_db:
-                        extract_lore_from_response(full_response, server_db)
+                        extract_lore_from_response(full_response, server_db, personality_name)
                     log.info("Validated response", extra={"response": full_response[:200]})
                     return full_response
     log.warning("Invalid format, discarding", extra={"response": response[:200]})

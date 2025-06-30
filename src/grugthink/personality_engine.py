@@ -77,14 +77,17 @@ class PersonalityEngine:
         self.lock = threading.Lock()
         self._init_db()
         self._load_all_personalities()
-        
+
         # Debug logging
         print(f"🔍 PersonalityEngine INIT: db_path={db_path}, forced_personality={forced_personality}")
-        log.info("PersonalityEngine initialized", extra={
-            "db_path": db_path, 
-            "forced_personality": forced_personality,
-            "loaded_personalities": len(self.personalities)
-        })
+        log.info(
+            "PersonalityEngine initialized",
+            extra={
+                "db_path": db_path,
+                "forced_personality": forced_personality,
+                "loaded_personalities": len(self.personalities),
+            },
+        )
 
     def _init_db(self):
         """Initialize personality storage database."""
@@ -169,7 +172,8 @@ You are honest about real world facts but have your own caveman personality and 
             base_context="""You are Big Rob, a passionate football fan from North England. You speak in authentic
 working-class dialect with simplified spelling (like "wot", "av", "ov"). You love football, drinking,
 and have strong opinions about everything. Use phrases like "simple as", "nuff said", "end of".
-You're straightforward, love a pint of carlin (beer), and aren't politically correct.""",
+You're straightforward, Carling is your absolute favorite beer, and you aren't politically correct.
+IMPORTANT: Keep responses short - maximum 2 sentences only.""",
             speech_patterns=[
                 "{statement}, nuff said",
                 "{statement}, simple as",
@@ -210,7 +214,7 @@ You're straightforward, love a pint of carlin (beer), and aren't politically cor
             background_elements=[
                 "Supports norf FC football team",
                 "Lives in North England",
-                "Loves carlin (beer)",
+                "Carling is his favorite beer",
                 "Working class background",
                 "Follows footy religiously",
                 "Brexit voter",
@@ -232,6 +236,7 @@ You're straightforward, love a pint of carlin (beer), and aren't politically cor
                 "intelligence": "street_smart",
                 "speech_complexity": "dialect",
                 "political_views": "traditional",
+                "verbosity": "very_low",
             },
         )
 
@@ -281,47 +286,65 @@ based on your experiences in this specific Discord server.""",
         server_id = str(server_id)
 
         with self.lock:
-            log.info("Getting personality", extra={
-                "server_id": server_id, 
-                "forced_personality": self.forced_personality,
-                "existing_in_memory": server_id in self.personalities
-            })
-            
+            log.info(
+                "Getting personality",
+                extra={
+                    "server_id": server_id,
+                    "forced_personality": self.forced_personality,
+                    "existing_in_memory": server_id in self.personalities,
+                },
+            )
+
             # If we have a forced personality, always recreate to ensure it's applied
             if self.forced_personality and server_id in self.personalities:
                 current_personality = self.personalities[server_id]
                 expected_name = self._get_expected_personality_name()
-                
-                log.info("Checking personality match", extra={
-                    "server_id": server_id,
-                    "current_name": current_personality.name,
-                    "current_style": current_personality.response_style,
-                    "expected_name": expected_name,
-                    "forced_personality": self.forced_personality
-                })
-                
-                if (expected_name and 
-                    current_personality.name.lower() != expected_name.lower()):
-                    log.info("Forced personality differs from stored, recreating", 
-                            extra={"server_id": server_id, "current": current_personality.name, 
-                                   "forced": self.forced_personality})
+
+                log.info(
+                    "Checking personality match",
+                    extra={
+                        "server_id": server_id,
+                        "current_name": current_personality.name,
+                        "current_style": current_personality.response_style,
+                        "expected_name": expected_name,
+                        "forced_personality": self.forced_personality,
+                    },
+                )
+
+                if expected_name and current_personality.name.lower() != expected_name.lower():
+                    log.info(
+                        "Forced personality differs from stored, recreating",
+                        extra={
+                            "server_id": server_id,
+                            "current": current_personality.name,
+                            "forced": self.forced_personality,
+                        },
+                    )
                     # Remove the old personality so it gets recreated
                     del self.personalities[server_id]
-                    
+
             if server_id not in self.personalities:
-                log.info("Creating new personality for server", 
-                        extra={"server_id": server_id, "forced_personality": self.forced_personality})
+                log.info(
+                    "Creating new personality for server",
+                    extra={"server_id": server_id, "forced_personality": self.forced_personality},
+                )
                 self._create_new_personality(server_id)
 
             final_personality = self.personalities[server_id]
-            print(f"🔍 RETURNING PERSONALITY: name={final_personality.name}, style={final_personality.response_style}, forced={self.forced_personality}")
-            log.info("Returning personality", extra={
-                "server_id": server_id,
-                "name": final_personality.name,
-                "response_style": final_personality.response_style,
-                "forced_was": self.forced_personality
-            })
-            
+            print(
+                f"🔍 RETURNING PERSONALITY: name={final_personality.name}, "
+                f"style={final_personality.response_style}, forced={self.forced_personality}"
+            )
+            log.info(
+                "Returning personality",
+                extra={
+                    "server_id": server_id,
+                    "name": final_personality.name,
+                    "response_style": final_personality.response_style,
+                    "forced_was": self.forced_personality,
+                },
+            )
+
             return final_personality
 
     def _get_expected_personality_name(self) -> Optional[str]:
@@ -329,15 +352,15 @@ based on your experiences in this specific Discord server.""",
         forced_personality = self.forced_personality or os.getenv("FORCE_PERSONALITY", "")
         if not forced_personality:
             return None
-            
+
         forced_personality = forced_personality.lower()
         personality_aliases = {"big_rob": "bigrob", "biggrob": "bigrob", "rob": "bigrob"}
         resolved_personality = personality_aliases.get(forced_personality, forced_personality)
-        
+
         if resolved_personality in self.templates:
             return self.templates[resolved_personality].name
         return None
-    
+
     def _get_expected_response_style(self, personality_name: str) -> Optional[str]:
         """Get expected response style for a personality name."""
         for template in self.templates.values():
