@@ -67,7 +67,7 @@ Each personality evolves through 4 stages based on usage and interaction pattern
 │                 │────│                  │────│                 │
 │  • Configuration│    │  • Orchestration │    │  • Personalities│
 │  • Monitoring   │    │  • API Endpoints │    │  • Knowledge DB │
-│  • Real-time UI│    │  • WebSocket     │    │  • Evolution    │
+│  • Real-time UI │    │  • WebSocket     │    │  • Evolution    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
@@ -77,5 +77,5 @@ GNU General Public License v3.0 - See [LICENSE.md](LICENSE.md) for details.
 
 ## Support
 
-- [GitHub Issues](https://github.com/your-org/grugthink/issues) - Bug reports and feature requests
+- [GitHub Issues](https://github.com/githubs/grugthink/issues) - Bug reports and feature requests
 - [Security Policy](docs/SECURITY.md) - Security vulnerability reporting
