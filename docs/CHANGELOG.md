@@ -2,6 +2,12 @@
 
 A comprehensive record of all features, improvements, and changes to the GrugThink personality engine.
 
+## [Unreleased]
+
+- Updated documentation for moved test files
+- Fixed broken documentation links in README.md
+- Added module docstrings to remaining test modules
+
 ## [3.1.0] - 2025-06-30
 
 ### 🐛 Fixed: Multi-Bot Collision Issues

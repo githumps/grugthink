@@ -76,8 +76,9 @@ PYTHONPATH=. pytest
 
 # Run specific test categories
 PYTHONPATH=. pytest tests/test_bot.py          # Bot functionality
-PYTHONPATH=. pytest tests/test_personality.py # Personality engine
-PYTHONPATH=. pytest tests/test_integration.py # End-to-end tests
+PYTHONPATH=. pytest tests/test_config.py       # Configuration handling
+PYTHONPATH=. pytest tests/test_grug_db.py      # Database layer
+PYTHONPATH=. pytest tests/test_integration.py  # End-to-end tests
 
 # Quick test run
 PYTHONPATH=. pytest -q

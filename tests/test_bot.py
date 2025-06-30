@@ -1,3 +1,5 @@
+"""Unit tests for Discord bot commands and verification logic."""
+
 import os
 import sys
 import time

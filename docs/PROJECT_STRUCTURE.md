@@ -52,8 +52,8 @@ grugthink/
 │   ├── 📄 conftest.py            # Test configuration
 │   ├── 📄 pytest.ini             # Pytest settings
 │   ├── 🧪 test_bot.py            # Bot functionality tests
-│   ├── 🧪 test_personality.py    # Personality system tests
 │   ├── 🧪 test_config.py         # Configuration tests
+│   ├── 🧪 test_grug_db.py        # Database layer tests
 │   └── 🧪 test_integration.py    # Integration tests
 │
 ├── 📂 docs/                       # Documentation
