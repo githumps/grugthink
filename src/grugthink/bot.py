@@ -116,7 +116,7 @@ def log_initial_settings():
     log.info("Log level set", extra={"level": config.LOG_LEVEL_STR})
 
 
-log_initial_settings()
+# log_initial_settings() # Moved to individual bot startup to avoid conflicts in multi-bot mode
 
 
 def build_personality_context(statement: str, server_db, server_id: str) -> str:

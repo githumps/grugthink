@@ -151,6 +151,15 @@ class GrugThinkContainer:
 
 async def main():
     """Main entry point."""
+    # Load .env file if it exists
+    try:
+        from dotenv import load_dotenv
+        if os.path.exists(".env"):
+            load_dotenv(".env")
+            log.info("Loaded environment variables from .env file")
+    except ImportError:
+        log.warning("python-dotenv not installed, .env file not loaded")
+    
     # Set multi-bot mode flag to skip single-bot config validation
     os.environ["GRUGTHINK_MULTIBOT_MODE"] = "true"
     

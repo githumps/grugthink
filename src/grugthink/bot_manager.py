@@ -223,6 +223,21 @@ class BotManager:
             for key, value in bot_env.items():
                 original_env[key] = os.environ.get(key)
                 os.environ[key] = value
+                
+            # Log initial settings for this bot instance
+            log.info("Bot starting up", extra={"bot_id": bot_id, "name": config.name})
+            if bot_env.get("GEMINI_API_KEY"):
+                log.info("Using Gemini for generation", extra={"model": bot_env.get("GEMINI_MODEL", "gemini-1.5-flash")})
+            elif bot_env.get("OLLAMA_URLS"):
+                log.info("Using Ollama for generation", extra={"urls": bot_env.get("OLLAMA_URLS"), "models": bot_env.get("OLLAMA_MODELS")})
+            if bot_env.get("GOOGLE_API_KEY"):
+                log.info("Google Search is enabled.")
+            else:
+                log.warning("Google Search is disabled. Bot cannot learn new things from the internet.")
+            if bot_env.get("TRUSTED_USER_IDS"):
+                log.info("Trusted users configured", extra={"users": bot_env.get("TRUSTED_USER_IDS")})
+            else:
+                log.warning("No trusted users configured. /learn command will be disabled for all.")
 
             # Initialize bot components
             data_dir = os.path.join(config.data_dir, bot_id)
@@ -355,6 +370,9 @@ class BotManager:
             if global_gemini:
                 env["GEMINI_API_KEY"] = global_gemini
                 
+        # Gemini model configuration - use from .env file or default
+        env["GEMINI_MODEL"] = os.getenv("GEMINI_MODEL", "gemma-3-27b-it")
+                
         if config.google_api_key:
             env["GOOGLE_API_KEY"] = config.google_api_key
         elif self.config_manager:
@@ -375,6 +393,8 @@ class BotManager:
             env["OLLAMA_MODELS"] = config.ollama_models
         if config.trusted_user_ids:
             env["TRUSTED_USER_IDS"] = config.trusted_user_ids
+        elif os.getenv("TRUSTED_USER_IDS"):
+            env["TRUSTED_USER_IDS"] = os.getenv("TRUSTED_USER_IDS")
 
         # Personality configuration
         if config.force_personality:
