@@ -330,6 +330,17 @@ class ConfigManager:
 
         return token_entry["id"]
 
+    def remove_discord_token(self, token_id: str) -> bool:
+        """Remove a Discord bot token by ID."""
+        tokens = self.get_config("api_keys.discord.tokens") or []
+        for idx, token in enumerate(tokens):
+            if token["id"] == token_id:
+                tokens.pop(idx)
+                self.set_config("api_keys.discord.tokens", tokens)
+                log.info("Removed Discord token", extra={"token_id": token_id})
+                return True
+        return False
+
     def get_discord_tokens(self) -> List[Dict[str, Any]]:
         """Get all Discord tokens."""
         return self.get_config("api_keys.discord.tokens") or []

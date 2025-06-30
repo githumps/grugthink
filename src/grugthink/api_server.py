@@ -8,19 +8,54 @@ and monitoring. Provides endpoints for the web dashboard frontend.
 
 import asyncio
 import json
+import logging
+import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
+import requests
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.middleware.sessions import SessionMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .bot_manager import BotManager
 from .config_manager import ConfigManager
 from .grug_structured_logger import get_logger
+
+# In-memory log storage for web dashboard
+RECENT_LOGS: List[Dict[str, str]] = []
+
+
+class InMemoryLogHandler(logging.Handler):
+    """Simple logging handler that keeps recent logs in memory."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        RECENT_LOGS.append(
+            {
+                "level": record.levelname.lower(),
+                "message": record.getMessage(),
+                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            }
+        )
+        if len(RECENT_LOGS) > 1000:
+            RECENT_LOGS.pop(0)
+
+
+log = get_logger(__name__)
+logging.getLogger().addHandler(InMemoryLogHandler())
 
 log = get_logger(__name__)
 
@@ -96,6 +131,11 @@ class APIServer:
             version="2.0.0",
         )
 
+        self.app.add_middleware(
+            SessionMiddleware,
+            secret_key=os.getenv("SESSION_SECRET", "grug-secret"),
+        )
+
         # WebSocket connections for real-time updates
         self.websocket_connections: List[WebSocket] = []
 
@@ -125,6 +165,19 @@ class APIServer:
     def _setup_routes(self):
         """Setup FastAPI routes."""
 
+        def get_current_user(request: Request) -> Dict[str, Any]:
+            user = request.session.get("user")
+            if not user:
+                raise HTTPException(status_code=401, detail="Not authenticated")
+            return user
+
+        def admin_required(request: Request = Depends(get_current_user)) -> Dict[str, Any]:
+            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            trusted = [t.strip() for t in trusted if t.strip()]
+            if request.session["user"]["id"] not in trusted:
+                raise HTTPException(status_code=403, detail="Forbidden")
+            return request.session["user"]
+
         # Dashboard route
         @self.app.get("/")
         async def dashboard():
@@ -133,13 +186,62 @@ class APIServer:
             except Exception:
                 return {"message": "GrugThink Management API", "version": "2.0.0"}
 
+        @self.app.get("/login")
+        async def login():
+            params = {
+                "client_id": os.getenv("DISCORD_CLIENT_ID"),
+                "response_type": "code",
+                "scope": "identify",
+                "redirect_uri": os.getenv("DISCORD_REDIRECT_URI"),
+            }
+            url = "https://discord.com/api/oauth2/authorize?" + requests.compat.urlencode(params)
+            return RedirectResponse(url)
+
+        @self.app.get("/callback")
+        async def auth_callback(request: Request):
+            code = request.query_params.get("code")
+            if not code:
+                raise HTTPException(status_code=400, detail="Missing code")
+
+            data = {
+                "client_id": os.getenv("DISCORD_CLIENT_ID"),
+                "client_secret": os.getenv("DISCORD_CLIENT_SECRET"),
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": os.getenv("DISCORD_REDIRECT_URI"),
+            }
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            token_res = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
+            token_res.raise_for_status()
+            access_token = token_res.json()["access_token"]
+
+            user_res = requests.get(
+                "https://discord.com/api/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            user_res.raise_for_status()
+            user = user_res.json()
+
+            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            trusted = [t.strip() for t in trusted if t.strip()]
+            if str(user["id"]) not in trusted:
+                return Response("Access denied", status_code=403)
+
+            request.session["user"] = {"id": str(user["id"]), "username": user["username"]}
+            return RedirectResponse("/")
+
+        @self.app.get("/logout")
+        async def logout(request: Request):
+            request.session.clear()
+            return RedirectResponse("/")
+
         # Bot management routes
-        @self.app.get("/api/bots", response_model=List[Dict[str, Any]])
+        @self.app.get("/api/bots", response_model=List[Dict[str, Any]], dependencies=[Depends(admin_required)])
         async def list_bots():
             """List all bot configurations and their status."""
             return self.bot_manager.list_bots()
 
-        @self.app.get("/api/bots/{bot_id}")
+        @self.app.get("/api/bots/{bot_id}", dependencies=[Depends(admin_required)])
         async def get_bot(bot_id: str):
             """Get specific bot status and configuration."""
             bot_status = self.bot_manager.get_bot_status(bot_id)
@@ -147,7 +249,11 @@ class APIServer:
                 raise HTTPException(status_code=404, detail="Bot not found")
             return bot_status
 
-        @self.app.post("/api/bots", response_model=BotActionResponse)
+        @self.app.post(
+            "/api/bots",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def create_bot(request: CreateBotRequest):
             """Create a new bot instance."""
             try:
@@ -200,7 +306,11 @@ class APIServer:
                 log.error("Failed to create bot", extra={"error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.put("/api/bots/{bot_id}", response_model=BotActionResponse)
+        @self.app.put(
+            "/api/bots/{bot_id}",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def update_bot(bot_id: str, request: UpdateBotRequest):
             """Update bot configuration."""
             try:
@@ -221,7 +331,11 @@ class APIServer:
                 log.error("Failed to update bot", extra={"bot_id": bot_id, "error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.delete("/api/bots/{bot_id}", response_model=BotActionResponse)
+        @self.app.delete(
+            "/api/bots/{bot_id}",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def delete_bot(bot_id: str):
             """Delete a bot instance."""
             try:
@@ -237,7 +351,11 @@ class APIServer:
                 log.error("Failed to delete bot", extra={"bot_id": bot_id, "error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/api/bots/{bot_id}/start", response_model=BotActionResponse)
+        @self.app.post(
+            "/api/bots/{bot_id}/start",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def start_bot(bot_id: str, background_tasks: BackgroundTasks):
             """Start a bot instance."""
             try:
@@ -249,7 +367,11 @@ class APIServer:
                 log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/api/bots/{bot_id}/stop", response_model=BotActionResponse)
+        @self.app.post(
+            "/api/bots/{bot_id}/stop",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def stop_bot(bot_id: str, background_tasks: BackgroundTasks):
             """Stop a bot instance."""
             try:
@@ -261,7 +383,11 @@ class APIServer:
                 log.error("Failed to stop bot", extra={"bot_id": bot_id, "error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.post("/api/bots/{bot_id}/restart", response_model=BotActionResponse)
+        @self.app.post(
+            "/api/bots/{bot_id}/restart",
+            response_model=BotActionResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def restart_bot(bot_id: str, background_tasks: BackgroundTasks):
             """Restart a bot instance."""
             try:
@@ -274,12 +400,16 @@ class APIServer:
                 raise HTTPException(status_code=500, detail=str(e))
 
         # Configuration management routes
-        @self.app.get("/api/config")
+        @self.app.get("/api/config", dependencies=[Depends(admin_required)])
         async def get_config():
             """Get current configuration."""
             return self.config_manager.get_config()
 
-        @self.app.put("/api/config", response_model=Dict[str, str])
+        @self.app.put(
+            "/api/config",
+            response_model=Dict[str, str],
+            dependencies=[Depends(admin_required)],
+        )
         async def update_config(request: ConfigUpdateRequest):
             """Update configuration value."""
             try:
@@ -292,7 +422,7 @@ class APIServer:
                 log.error("Failed to update config", extra={"error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/api/templates")
+        @self.app.get("/api/templates", dependencies=[Depends(admin_required)])
         async def list_templates():
             """List available bot templates."""
             templates = self.config_manager.list_templates()
@@ -306,7 +436,11 @@ class APIServer:
                 for template_id, template in templates.items()
             }
 
-        @self.app.post("/api/discord-tokens", response_model=Dict[str, str])
+        @self.app.post(
+            "/api/discord-tokens",
+            response_model=Dict[str, str],
+            dependencies=[Depends(admin_required)],
+        )
         async def add_discord_token(request: AddDiscordTokenRequest):
             """Add a Discord bot token."""
             try:
@@ -319,7 +453,7 @@ class APIServer:
                 log.error("Failed to add Discord token", extra={"error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/api/discord-tokens")
+        @self.app.get("/api/discord-tokens", dependencies=[Depends(admin_required)])
         async def list_discord_tokens():
             """List Discord tokens (without revealing actual tokens)."""
             tokens = self.config_manager.get_discord_tokens()
@@ -333,7 +467,22 @@ class APIServer:
                 for token in tokens
             ]
 
-        @self.app.post("/api/api-keys", response_model=Dict[str, str])
+        @self.app.delete(
+            "/api/discord-tokens/{token_id}",
+            dependencies=[Depends(admin_required)],
+        )
+        async def delete_discord_token(token_id: str):
+            """Delete a stored Discord bot token."""
+            if not self.config_manager.remove_discord_token(token_id):
+                raise HTTPException(status_code=404, detail="Token not found")
+            await self._broadcast_update("token_deleted", {"token_id": token_id})
+            return {"status": "success"}
+
+        @self.app.post(
+            "/api/api-keys",
+            response_model=Dict[str, str],
+            dependencies=[Depends(admin_required)],
+        )
         async def set_api_key(request: SetApiKeyRequest):
             """Set API key for a service."""
             try:
@@ -348,7 +497,7 @@ class APIServer:
                 log.error("Failed to set API key", extra={"error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @self.app.get("/api/api-keys/{service}")
+        @self.app.get("/api/api-keys/{service}", dependencies=[Depends(admin_required)])
         async def get_api_keys(service: str):
             """Get API keys for a service (without revealing values)."""
             keys = self.config_manager.get_api_keys(service)
@@ -356,14 +505,24 @@ class APIServer:
             return {key: "***REDACTED***" if value else None for key, value in keys.items()}
 
         # System information routes
-        @self.app.get("/api/system/stats", response_model=SystemStatsResponse)
+        @self.app.get(
+            "/api/system/stats",
+            response_model=SystemStatsResponse,
+            dependencies=[Depends(admin_required)],
+        )
         async def get_system_stats():
             """Get system statistics."""
             bots = self.bot_manager.list_bots()
             running_bots = [bot for bot in bots if bot["status"] == "running"]
 
-            total_guilds = sum(bot.get("guild_count", 0) for bot in running_bots)
-            total_users = sum(bot.get("user_count", 0) for bot in running_bots)
+            guild_ids: Set[int] = set()
+            user_ids: Set[int] = set()
+            for bot in running_bots:
+                guild_ids.update(bot.get("guild_ids", []))
+                user_ids.update(bot.get("user_ids", []))
+
+            total_guilds = len(guild_ids)
+            total_users = len(user_ids)
 
             return SystemStatsResponse(
                 total_bots=len(bots),
@@ -375,16 +534,22 @@ class APIServer:
                 api_calls_today=0,  # TODO: Implement API call tracking
             )
 
-        @self.app.get("/api/system/logs")
+        @self.app.get("/api/system/logs", dependencies=[Depends(admin_required)])
         async def get_system_logs():
             """Get recent system logs."""
-            # TODO: Implement log retrieval
-            return {"logs": [], "message": "Log retrieval not yet implemented"}
+            return {"logs": RECENT_LOGS[-200:]}  # return last 200 entries
 
         # WebSocket endpoint for real-time updates
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
+            user = websocket.session.get("user") if hasattr(websocket, "session") else None
+            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            trusted = [t.strip() for t in trusted if t.strip()]
+            if not user or user.get("id") not in trusted:
+                await websocket.close()
+                return
+
             self.websocket_connections.append(websocket)
 
             try:
