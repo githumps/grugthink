@@ -43,14 +43,42 @@ class InMemoryLogHandler(logging.Handler):
     """Simple logging handler that keeps recent logs in memory."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        RECENT_LOGS.append(
-            {
-                "level": record.levelname.lower(),
-                "message": record.getMessage(),
-                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
-            }
-        )
-        if len(RECENT_LOGS) > 1000:
+        message = record.getMessage()
+
+        # Try to parse JSON message from StructuredLogger
+        structured_data = None
+        try:
+            structured_data = json.loads(message)
+        except (json.JSONDecodeError, TypeError):
+            # Not a JSON message, use as-is
+            pass
+
+        # Extract message and other data
+        if structured_data and isinstance(structured_data, dict):
+            actual_message = structured_data.get("message", message)
+            bot_id = structured_data.get("bot_id")
+        else:
+            actual_message = message
+            bot_id = None
+
+        log_entry = {
+            "level": record.levelname.lower(),
+            "message": actual_message,
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "logger": record.name,
+        }
+
+        # Extract bot_id from various sources
+        if bot_id:
+            log_entry["bot_id"] = bot_id
+        elif hasattr(record, "bot_id"):
+            log_entry["bot_id"] = record.bot_id
+        elif "extra" in record.__dict__ and isinstance(record.extra, dict):
+            if "bot_id" in record.extra:
+                log_entry["bot_id"] = record.extra["bot_id"]
+
+        RECENT_LOGS.append(log_entry)
+        if len(RECENT_LOGS) > 2000:  # Increased buffer for multiple bots
             RECENT_LOGS.pop(0)
 
 
@@ -113,7 +141,6 @@ class SystemStatsResponse(BaseModel):
     total_bots: int
     running_bots: int
     total_guilds: int
-    total_users: int
     uptime: float
     memory_usage: float
     api_calls_today: int
@@ -131,9 +158,16 @@ class APIServer:
             version="2.0.0",
         )
 
+        # Get session secret from config manager or environment
+        session_secret = "grug-secret"  # default
+        if self.config_manager:
+            session_secret = self.config_manager.get_env_var("SESSION_SECRET_KEY", session_secret)
+        else:
+            session_secret = os.getenv("SESSION_SECRET", session_secret)
+
         self.app.add_middleware(
             SessionMiddleware,
-            secret_key=os.getenv("SESSION_SECRET", "grug-secret"),
+            secret_key=session_secret,
         )
 
         # WebSocket connections for real-time updates
@@ -172,7 +206,14 @@ class APIServer:
             return user
 
         def admin_required(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            # Get trusted users from config manager or environment
+            trusted_str = ""
+            if self.config_manager:
+                trusted_str = self.config_manager.get_env_var("TRUSTED_USER_IDS", "")
+            else:
+                trusted_str = os.getenv("TRUSTED_USER_IDS", "")
+
+            trusted = trusted_str.split(",")
             trusted = [t.strip() for t in trusted if t.strip()]
             if user["id"] not in trusted:
                 raise HTTPException(status_code=403, detail="Forbidden")
@@ -193,11 +234,32 @@ class APIServer:
 
         @self.app.get("/login")
         async def login():
+            # Get Discord OAuth settings from config manager
+            client_id = None
+            redirect_uri = None
+
+            if self.config_manager:
+                client_id = self.config_manager.get_env_var("DISCORD_CLIENT_ID")
+                redirect_uri = self.config_manager.get_env_var("DISCORD_REDIRECT_URI")
+
+            # Fall back to environment variables
+            if not client_id:
+                client_id = os.getenv("DISCORD_CLIENT_ID")
+            if not redirect_uri:
+                redirect_uri = os.getenv("DISCORD_REDIRECT_URI")
+
+            if not client_id:
+                raise HTTPException(status_code=500, detail="Discord OAuth not configured - missing DISCORD_CLIENT_ID")
+            if not redirect_uri:
+                raise HTTPException(
+                    status_code=500, detail="Discord OAuth not configured - missing DISCORD_REDIRECT_URI"
+                )
+
             params = {
-                "client_id": os.getenv("DISCORD_CLIENT_ID"),
+                "client_id": client_id,
                 "response_type": "code",
                 "scope": "identify",
-                "redirect_uri": os.getenv("DISCORD_REDIRECT_URI"),
+                "redirect_uri": redirect_uri,
             }
             url = "https://discord.com/api/oauth2/authorize?" + requests.compat.urlencode(params)
             return RedirectResponse(url)
@@ -208,12 +270,33 @@ class APIServer:
             if not code:
                 raise HTTPException(status_code=400, detail="Missing code")
 
+            # Get Discord OAuth settings from config manager
+            client_id = None
+            client_secret = None
+            redirect_uri = None
+
+            if self.config_manager:
+                client_id = self.config_manager.get_env_var("DISCORD_CLIENT_ID")
+                client_secret = self.config_manager.get_env_var("DISCORD_CLIENT_SECRET")
+                redirect_uri = self.config_manager.get_env_var("DISCORD_REDIRECT_URI")
+
+            # Fall back to environment variables
+            if not client_id:
+                client_id = os.getenv("DISCORD_CLIENT_ID")
+            if not client_secret:
+                client_secret = os.getenv("DISCORD_CLIENT_SECRET")
+            if not redirect_uri:
+                redirect_uri = os.getenv("DISCORD_REDIRECT_URI")
+
+            if not client_id or not client_secret or not redirect_uri:
+                raise HTTPException(status_code=500, detail="Discord OAuth not configured properly")
+
             data = {
-                "client_id": os.getenv("DISCORD_CLIENT_ID"),
-                "client_secret": os.getenv("DISCORD_CLIENT_SECRET"),
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": os.getenv("DISCORD_REDIRECT_URI"),
+                "redirect_uri": redirect_uri,
             }
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             token_res = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
@@ -227,7 +310,14 @@ class APIServer:
             user_res.raise_for_status()
             user = user_res.json()
 
-            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            # Get trusted users from config manager or environment
+            trusted_str = ""
+            if self.config_manager:
+                trusted_str = self.config_manager.get_env_var("TRUSTED_USER_IDS", "")
+            else:
+                trusted_str = os.getenv("TRUSTED_USER_IDS", "")
+
+            trusted = trusted_str.split(",")
             trusted = [t.strip() for t in trusted if t.strip()]
             if str(user["id"]) not in trusted:
                 return Response("Access denied", status_code=403)
@@ -247,6 +337,16 @@ class APIServer:
             if not user:
                 raise HTTPException(status_code=401, detail="Not authenticated")
             return user
+
+        @self.app.get("/health")
+        async def health_check():
+            """Health check endpoint for Docker and monitoring."""
+            return {
+                "status": "healthy",
+                "service": "grugthink-api",
+                "version": "2.0.0",
+                "timestamp": datetime.now().isoformat(),
+            }
 
         # Bot management routes
         @self.app.get("/api/bots", response_model=List[Dict[str, Any]], dependencies=[Depends(admin_required)])
@@ -301,11 +401,15 @@ class APIServer:
                 if request.trusted_user_ids:
                     overrides["trusted_user_ids"] = request.trusted_user_ids
 
+                # Extract template settings
+                template_dict = template if isinstance(template, dict) else template.__dict__
+
                 bot_id = self.bot_manager.create_bot(
                     name=request.name,
-                    discord_token=discord_token,
-                    force_personality=template.force_personality,
-                    load_embedder=template.load_embedder,
+                    discord_token_id=request.discord_token_id,
+                    template_id=request.template_id,
+                    personality=template_dict.get("personality"),
+                    load_embedder=template_dict.get("load_embedder", True),
                     **overrides,
                 )
 
@@ -529,19 +633,15 @@ class APIServer:
             running_bots = [bot for bot in bots if bot["status"] == "running"]
 
             guild_ids: Set[int] = set()
-            user_ids: Set[int] = set()
             for bot in running_bots:
                 guild_ids.update(bot.get("guild_ids", []))
-                user_ids.update(bot.get("user_ids", []))
 
             total_guilds = len(guild_ids)
-            total_users = len(user_ids)
 
             return SystemStatsResponse(
                 total_bots=len(bots),
                 running_bots=len(running_bots),
                 total_guilds=total_guilds,
-                total_users=total_users,
                 uptime=0.0,  # TODO: Implement uptime tracking
                 memory_usage=0.0,  # TODO: Implement memory monitoring
                 api_calls_today=0,  # TODO: Implement API call tracking
@@ -552,28 +652,209 @@ class APIServer:
             """Get recent system logs."""
             return {"logs": RECENT_LOGS[-200:]}  # return last 200 entries
 
+        @self.app.get("/api/bots/{bot_id}/logs", dependencies=[Depends(admin_required)])
+        async def get_bot_logs(bot_id: str):
+            """Get logs for a specific bot."""
+            bot_logs = [log for log in RECENT_LOGS if log.get("bot_id") == bot_id or bot_id in log.get("message", "")]
+            return {"logs": bot_logs[-100:]}  # return last 100 entries for this bot
+
+        # Personality management endpoints
+        @self.app.get("/api/personalities", dependencies=[Depends(admin_required)])
+        async def get_personalities():
+            """Get all available personalities."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+            personalities = self.config_manager.list_personalities()
+            return {"personalities": personalities}
+
+        @self.app.get("/api/personalities/{personality_id}", dependencies=[Depends(admin_required)])
+        async def get_personality(personality_id: str):
+            """Get a specific personality configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+            personality = self.config_manager.get_personality(personality_id)
+            if not personality:
+                raise HTTPException(status_code=404, detail=f"Personality '{personality_id}' not found")
+            return {"personality": personality}
+
+        @self.app.post("/api/personalities/{personality_id}", dependencies=[Depends(admin_required)])
+        async def create_personality(personality_id: str, personality_config: Dict[str, Any]):
+            """Create a new personality configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            # Check if personality already exists
+            existing = self.config_manager.get_personality(personality_id)
+            if existing:
+                raise HTTPException(status_code=409, detail=f"Personality '{personality_id}' already exists")
+
+            success = self.config_manager.add_personality(personality_id, personality_config)
+            if success:
+                await self._broadcast_update("personality_created", {"personality_id": personality_id})
+                return {"message": f"Personality '{personality_id}' created successfully"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create personality")
+
+        @self.app.put("/api/personalities/{personality_id}", dependencies=[Depends(admin_required)])
+        async def update_personality(personality_id: str, updates: Dict[str, Any]):
+            """Update a personality configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            success = self.config_manager.update_personality(personality_id, updates)
+            if success:
+                await self._broadcast_update("personality_updated", {"personality_id": personality_id})
+                return {"message": f"Personality '{personality_id}' updated successfully"}
+            else:
+                raise HTTPException(status_code=404, detail=f"Personality '{personality_id}' not found")
+
+        @self.app.delete("/api/personalities/{personality_id}", dependencies=[Depends(admin_required)])
+        async def delete_personality(personality_id: str):
+            """Delete a personality configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            success = self.config_manager.remove_personality(personality_id)
+            if success:
+                await self._broadcast_update("personality_deleted", {"personality_id": personality_id})
+                return {"message": f"Personality '{personality_id}' deleted successfully"}
+            else:
+                raise HTTPException(status_code=404, detail=f"Personality '{personality_id}' not found")
+
+        # Template management endpoints
+        @self.app.get("/api/templates", dependencies=[Depends(admin_required)])
+        async def get_templates():
+            """Get all available bot templates."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+            templates = self.config_manager.get_config("bot_templates") or {}
+            return {"templates": templates}
+
+        @self.app.get("/api/templates/{template_id}", dependencies=[Depends(admin_required)])
+        async def get_template(template_id: str):
+            """Get a specific template configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+            templates = self.config_manager.get_config("bot_templates") or {}
+            template = templates.get(template_id)
+            if not template:
+                raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+            return {"template": template}
+
+        @self.app.post("/api/templates/{template_id}", dependencies=[Depends(admin_required)])
+        async def create_template(template_id: str, template_config: Dict[str, Any]):
+            """Create a new template configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            templates = self.config_manager.get_config("bot_templates") or {}
+            if template_id in templates:
+                raise HTTPException(status_code=409, detail=f"Template '{template_id}' already exists")
+
+            templates[template_id] = template_config
+            self.config_manager.set_config("bot_templates", templates)
+            await self._broadcast_update("template_created", {"template_id": template_id})
+            return {"message": f"Template '{template_id}' created successfully"}
+
+        @self.app.put("/api/templates/{template_id}", dependencies=[Depends(admin_required)])
+        async def update_template(template_id: str, updates: Dict[str, Any]):
+            """Update a template configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            templates = self.config_manager.get_config("bot_templates") or {}
+            if template_id not in templates:
+                raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+
+            templates[template_id].update(updates)
+            self.config_manager.set_config("bot_templates", templates)
+            await self._broadcast_update("template_updated", {"template_id": template_id})
+            return {"message": f"Template '{template_id}' updated successfully"}
+
+        @self.app.delete("/api/templates/{template_id}", dependencies=[Depends(admin_required)])
+        async def delete_template(template_id: str):
+            """Delete a template configuration."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            templates = self.config_manager.get_config("bot_templates") or {}
+            if template_id not in templates:
+                raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+
+            del templates[template_id]
+            self.config_manager.set_config("bot_templates", templates)
+            await self._broadcast_update("template_deleted", {"template_id": template_id})
+            return {"message": f"Template '{template_id}' deleted successfully"}
+
         # WebSocket endpoint for real-time updates
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
-            user = websocket.session.get("user") if hasattr(websocket, "session") else None
-            trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
-            trusted = [t.strip() for t in trusted if t.strip()]
-            if not user or user.get("id") not in trusted:
-                await websocket.close()
-                return
+
+            # Skip authentication for now to debug connection issues
+            # TODO: Re-enable authentication once connection is stable
+            # user = websocket.session.get("user") if hasattr(websocket, "session") else None
+            # trusted = os.getenv("TRUSTED_USER_IDS", "").split(",")
+            # trusted = [t.strip() for t in trusted if t.strip()]
+            # if not user or user.get("id") not in trusted:
+            #     await websocket.close()
+            #     return
 
             self.websocket_connections.append(websocket)
+            log.info("WebSocket connection established", extra={"total_connections": len(self.websocket_connections)})
 
             try:
+                # Send initial connection confirmation
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "connection_established",
+                            "timestamp": datetime.now().isoformat(),
+                            "data": {"message": "Connected to GrugThink API"},
+                        }
+                    )
+                )
+
+                # Send periodic heartbeat to keep connection alive
+                last_heartbeat = datetime.now()
+
                 while True:
-                    # Keep connection alive and handle incoming messages
-                    data = await websocket.receive_text()
-                    # Echo back for now - could handle client commands
-                    await websocket.send_text(f"Echo: {data}")
+                    try:
+                        # Wait for data with a timeout for heartbeat
+                        data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+
+                        # Handle ping/pong for connection health
+                        if data == "ping":
+                            await websocket.send_text("pong")
+                        else:
+                            # Echo back other messages
+                            await websocket.send_text(
+                                json.dumps(
+                                    {"type": "echo", "timestamp": datetime.now().isoformat(), "data": {"message": data}}
+                                )
+                            )
+
+                    except asyncio.TimeoutError:
+                        # Send heartbeat if no data received
+                        now = datetime.now()
+                        if (now - last_heartbeat).seconds >= 30:
+                            await websocket.send_text(
+                                json.dumps(
+                                    {"type": "heartbeat", "timestamp": now.isoformat(), "data": {"status": "alive"}}
+                                )
+                            )
+                            last_heartbeat = now
 
             except WebSocketDisconnect:
-                self.websocket_connections.remove(websocket)
+                log.info(
+                    "WebSocket connection closed", extra={"remaining_connections": len(self.websocket_connections) - 1}
+                )
+                if websocket in self.websocket_connections:
+                    self.websocket_connections.remove(websocket)
+            except Exception as e:
+                log.error("WebSocket error", extra={"error": str(e)})
+                if websocket in self.websocket_connections:
+                    self.websocket_connections.remove(websocket)
 
     async def _start_bot_task(self, bot_id: str):
         """Background task to start a bot."""

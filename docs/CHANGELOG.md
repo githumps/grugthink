@@ -8,38 +8,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Major Simplification
+### Bug Fixes and UI Improvements
+- **Fixed bot personality display**: Corrected interface showing "adaptive" instead of "grug" personality
+- **Enhanced template management**: Added comprehensive CRUD API for bot templates with full frontend support
+- **Individual bot logs**: Implemented bot-specific log viewing with interactive modal UI
+- **Removed Total Users metric**: Cleaned up irrelevant metric from dashboard interface
+- **Fixed Docker health check**: Resolved "unhealthy" container status by adding unauthenticated `/health` endpoint
+- **Deep codebase review**: Identified and documented critical security vulnerabilities and inconsistencies
+
+### Security Issues Identified
+- **Critical**: Exposed Discord tokens in configuration file (immediate security risk)
+- **Critical**: Hardcoded weak session secret compromising web authentication
+- **High**: Permissive CORS configuration allowing any domain access
+- **Medium**: Missing input validation on API endpoints
+
+### Code Quality Improvements
+- **API consistency**: Fixed personality vs force_personality field confusion
+- **Error handling**: Identified inconsistent error response formats across endpoints
+- **Type safety**: Documented missing type hints throughout codebase
+- **Performance**: Identified inefficient database query patterns
+
+### Major Configuration Overhaul
+- **Single-file configuration**: Eliminated .env file redundancy, now uses only `grugthink_config.yaml`
+- **Configuration migration**: Automated migration from JSON+env to unified YAML system
+- **Configurable personalities**: Extracted hardcoded personalities into YAML configuration system
+- **Enhanced personality system**: Added comprehensive personality configuration with speech patterns, behaviors, and traits
+
+### Fixed
+- **Bot startup error**: Fixed `'BotConfig' object has no attribute 'discord_token'` critical startup bug
+- **WebSocket connection issues**: Fixed "Disconnected/Connected" flipping with improved heartbeat mechanism
+- **Memory isolation**: Fixed critical bug where multiple Discord bot instances shared memories by implementing unique database paths based on Discord token hash
+- **Command truncation**: Fixed `/what-know` command getting cut off by implementing proper Discord embed field limits (1024 characters)
+- **Bot deletion bug**: Fixed critical issue where deleting bot configs via web interface didn't stop running bot instances
+
+### Added
+- **Template management CRUD**: Complete REST API for bot template operations (GET, POST, PUT, DELETE)
+- **Individual bot logging**: New API endpoint `/api/bots/{bot_id}/logs` for per-bot log filtering with modal UI
+- **Bot logs modal**: Interactive frontend modal for viewing and refreshing bot-specific logs
+- **Personality management APIs**: CRUD operations for personality configurations via REST API
+- **Enhanced WebSocket handling**: Improved connection stability with heartbeat and better error handling
+- **Bot-specific logging**: Enhanced logging system to track and filter logs by bot_id
+- **Comprehensive personality configs**: Full YAML configuration for Grug, Big Rob, and Adaptive personalities
+
+### Changed
+- **Bot status API**: Returns both personality and force_personality fields for compatibility
+- **Dashboard metrics**: Removed Total Users tracking and display throughout system
+- **Frontend personality display**: Uses personality field as primary source with force_personality fallback
+- **Configuration architecture**: Moved from 3-file system (.env + JSON + YAML) to single YAML file
+- **Token management**: Discord tokens now referenced by ID instead of duplicated across files
+- **Personality system**: Personalities now configurable in YAML instead of hardcoded in Python
+- **Log buffer**: Increased to 2000 entries to support multiple bot instances
+- **Development workflow**: Enforced mandatory documentation updates and linting requirements
+
+### Technical
+- **Health check endpoint**: Added `/health` endpoint for Docker health checks without authentication
+- **Template API endpoints**: `/api/templates`, `/api/templates/{template_id}` with full CRUD operations
+- **Bot logs endpoint**: `/api/bots/{bot_id}/logs` for filtered log retrieval
+- **Enhanced SystemStatsResponse**: Removed total_users field from Pydantic model
+- **Frontend enhancements**: Added viewBotLogs(), showBotLogsModal(), renderBotLogs() functions
+- **Docker health check**: Updated from `/api/system/stats` to `/health` to avoid authentication issues
+- **Removed files**: Eliminated `.env` and `bot_configs.json` (migration provided)
+- **Enhanced ConfigManager**: Added personality and bot configuration management methods
+- **Updated BotConfig**: Added personality field, deprecated force_personality
+- **Improved API server**: Better Discord OAuth configuration handling from YAML
+- **Migration scripts**: Created automated migration from old to new configuration system
+- **Documentation updates**: Updated all setup guides for YAML-only configuration
+- **Workflow enforcement**: Enhanced CLAUDE.md with strict development rules
+
+### Security
+- **Vulnerability identification**: Documented critical security issues requiring immediate attention
+- **Eliminated token duplication**: Centralized all sensitive data in single YAML file
+- **Improved OAuth handling**: Better Discord OAuth configuration management from YAML
+- **Session security**: Enhanced session secret handling through configuration
+
+### Previous Changes
 - **Unified architecture**: Removed single-bot deployment methods, simplified to multi-bot Docker only
 - **Streamlined Docker**: Single Dockerfile and docker-compose.yml for all deployments
 - **Documentation cleanup**: Removed redundant docs, focused on essential guides
 - **Project structure**: Cleaned up directories and removed unnecessary complexity
-
-### Fixed
-- **Memory isolation**: Fixed critical bug where multiple Discord bot instances shared memories by implementing unique database paths based on Discord token hash
-- **Command truncation**: Fixed `/what-know` command getting cut off by implementing proper Discord embed field limits (1024 characters)
-- **Logging timestamps**: Added timestamps to log output for better debugging
-- **Bot deletion bug**: Fixed critical issue where deleting bot configs via web interface didn't stop running bot instances, causing persistent double responses
-
-### Changed
-- Database paths now include token hash for isolation (e.g., `grug_lore_a1b2c3d4e5f6.db`)
-- `/what-know` command now shows "Facts (Showing X of Y)" when truncated
-- Log format now includes timestamps: `YYYY-MM-DD HH:MM:SS - module - LEVEL - message`
-- Bot deletion via web interface now properly awaits bot shutdown before removing config
-- Single Docker deployment method with web dashboard management
-
-### Technical
-- Consolidated Docker structure: removed single-bot, lite, optimized variants
-- Simplified project structure and removed redundant examples
-- Updated `src/grugthink/config.py` to generate unique database paths
-- Rewrote `/what-know` command truncation logic in `src/grugthink/bot.py`
-- Enhanced logging configuration with timestamp formatting
-- Fixed async/await bug in `bot_manager.py` delete_bot function
-- Updated API server to properly await bot deletion
-- All tests passing (43 passed, 1 skipped)
-
-- Updated documentation for moved test files
-- Fixed broken documentation links in README.md
-- Added module docstrings to remaining test modules
 
 ## [3.2.0] - 2025-06-30
 

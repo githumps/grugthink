@@ -32,19 +32,24 @@ class BotConfig:
 
     bot_id: str
     name: str
-    discord_token: str
-    gemini_api_key: Optional[str] = None
-    ollama_urls: Optional[str] = None
-    ollama_models: Optional[str] = None
-    google_api_key: Optional[str] = None
-    google_cse_id: Optional[str] = None
-    force_personality: Optional[str] = None
+    discord_token_id: str  # Reference to token ID in grugthink_config.yaml
+    template_id: str = "evolution_bot"  # Template to use for this bot
+    personality: Optional[str] = None  # Personality ID from personality configs
+    force_personality: Optional[str] = None  # Deprecated, use personality instead
     load_embedder: bool = True
     log_level: str = "INFO"
     data_dir: str = "./data"
     trusted_user_ids: Optional[str] = None
     status: str = "stopped"  # stopped, starting, running, stopping, error
+    auto_start: Optional[bool] = None  # Whether to auto-start this bot on container startup
     created_at: float = None
+
+    # Override settings (optional)
+    override_gemini_key: Optional[str] = None
+    override_google_api_key: Optional[str] = None
+    override_google_cse_id: Optional[str] = None
+    override_ollama_urls: Optional[str] = None
+    override_ollama_models: Optional[str] = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -69,12 +74,13 @@ class BotManager:
     """Manages multiple Discord bot instances."""
 
     def __init__(self, config_file: str = "bot_configs.json", config_manager=None):
-        self.config_file = config_file
+        self.config_file = config_file  # Keep for backward compatibility during migration
         self.config_manager = config_manager
         self.bots: Dict[str, BotInstance] = {}
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=10)
         self._lock = threading.Lock()
+        self._migrated = False
 
         # Load existing configurations
         self._load_configs()
@@ -82,43 +88,113 @@ class BotManager:
         log.info("BotManager initialized", extra={"config_file": config_file, "loaded_bots": len(self.bots)})
 
     def _load_configs(self):
-        """Load bot configurations from file."""
+        """Load bot configurations from ConfigManager or migrate from JSON."""
+        if self.config_manager:
+            # Try to load from YAML config first
+            bot_configs = self.config_manager.list_bot_configs()
+
+            if bot_configs:
+                # Load from YAML
+                for bot_id, config_data in bot_configs.items():
+                    try:
+                        config = BotConfig(**config_data)
+                        instance = BotInstance(config=config)
+                        self.bots[config.bot_id] = instance
+                    except Exception as e:
+                        log.error("Failed to load bot config", extra={"bot_id": bot_id, "error": str(e)})
+
+                log.info("Loaded bot configurations from YAML", extra={"count": len(bot_configs)})
+
+            elif os.path.exists(self.config_file):
+                # Migrate from JSON
+                log.info("No bot configs in YAML, migrating from JSON", extra={"json_file": self.config_file})
+                try:
+                    migration_map = self.config_manager.migrate_from_json(self.config_file)
+
+                    # Load the migrated configs
+                    bot_configs = self.config_manager.list_bot_configs()
+                    for bot_id, config_data in bot_configs.items():
+                        config = BotConfig(**config_data)
+                        instance = BotInstance(config=config)
+                        self.bots[config.bot_id] = instance
+
+                    self._migrated = True
+                    log.info(
+                        "Migration completed",
+                        extra={"migrated_count": len(migration_map), "json_file": self.config_file},
+                    )
+
+                    # Optionally back up the old JSON file
+                    backup_file = self.config_file + ".migrated.backup"
+                    os.rename(self.config_file, backup_file)
+                    log.info("Backed up old JSON config", extra={"backup_file": backup_file})
+
+                except Exception as e:
+                    log.error("Migration failed, falling back to JSON loading", extra={"error": str(e)})
+                    self._load_configs_from_json()
+        else:
+            # No ConfigManager, load from JSON (legacy mode)
+            self._load_configs_from_json()
+
+    def _load_configs_from_json(self):
+        """Legacy method to load from JSON file."""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, "r") as f:
                     configs = json.load(f)
 
                 for config_data in configs:
-                    config = BotConfig(**config_data)
+                    # Convert old format to new format with dummy token_id
+                    if "discord_token" in config_data and "discord_token_id" not in config_data:
+                        config_data["discord_token_id"] = "legacy"
+                        config_data["template_id"] = "evolution_bot"
+                        # Keep the actual token for legacy compatibility
+                        config_data["_legacy_discord_token"] = config_data.pop("discord_token")
+
+                    config = BotConfig(**{k: v for k, v in config_data.items() if not k.startswith("_")})
                     instance = BotInstance(config=config)
+                    # Store legacy token if present
+                    if "_legacy_discord_token" in config_data:
+                        instance._legacy_discord_token = config_data["_legacy_discord_token"]
                     self.bots[config.bot_id] = instance
 
-                log.info("Loaded bot configurations", extra={"count": len(configs), "bot_ids": list(self.bots.keys())})
+                log.info(
+                    "Loaded bot configurations from JSON",
+                    extra={"count": len(configs), "bot_ids": list(self.bots.keys())},
+                )
 
             except Exception as e:
                 log.error("Failed to load bot configurations", extra={"error": str(e), "config_file": self.config_file})
 
     def _save_configs(self):
-        """Save current bot configurations to file."""
+        """Save current bot configurations to ConfigManager."""
+        if not self.config_manager:
+            log.warning("No ConfigManager available, cannot save bot configs")
+            return
+
         try:
-            configs = []
             for bot_instance in self.bots.values():
                 config_dict = asdict(bot_instance.config)
-                configs.append(config_dict)
+                # Remove None values to keep config clean
+                config_dict = {k: v for k, v in config_dict.items() if v is not None}
 
-            with open(self.config_file, "w") as f:
-                json.dump(configs, f, indent=2)
+                # Update or add the bot config
+                existing_config = self.config_manager.get_bot_config(bot_instance.config.bot_id)
+                if existing_config:
+                    self.config_manager.update_bot_config(bot_instance.config.bot_id, config_dict)
+                else:
+                    self.config_manager.add_bot_config(config_dict)
 
-            log.info("Saved bot configurations", extra={"count": len(configs), "config_file": self.config_file})
+            log.info("Saved bot configurations to YAML", extra={"count": len(self.bots)})
 
         except Exception as e:
-            log.error("Failed to save bot configurations", extra={"error": str(e), "config_file": self.config_file})
+            log.error("Failed to save bot configurations", extra={"error": str(e)})
 
-    def create_bot(self, name: str, discord_token: str, **kwargs) -> str:
+    def create_bot(self, name: str, discord_token_id: str, **kwargs) -> str:
         """Create a new bot configuration."""
         bot_id = str(uuid.uuid4())
 
-        config = BotConfig(bot_id=bot_id, name=name, discord_token=discord_token, **kwargs)
+        config = BotConfig(bot_id=bot_id, name=name, discord_token_id=discord_token_id, **kwargs)
 
         instance = BotInstance(config=config)
 
@@ -176,29 +252,35 @@ class BotManager:
         instance = self.bots[bot_id]
         config = instance.config
 
+        # Get the actual personality being used (prefer new 'personality' field)
+        actual_personality = getattr(config, "personality", None) or config.force_personality
+
+        # If no explicit personality, try to get it from the template
+        if not actual_personality and self.config_manager:
+            template_id = getattr(config, "template_id", "evolution_bot")
+            template = self.config_manager.get_template(template_id)
+            if template:
+                template_dict = template if isinstance(template, dict) else template.__dict__
+                actual_personality = template_dict.get("personality")
+
         status = {
             "bot_id": bot_id,
             "name": config.name,
             "status": config.status,
-            "force_personality": config.force_personality,
+            "personality": actual_personality,  # Current personality
+            "force_personality": config.force_personality,  # Deprecated but kept for compatibility
+            "template_id": getattr(config, "template_id", "evolution_bot"),
+            "discord_token_id": config.discord_token_id,
             "created_at": config.created_at,
             "last_heartbeat": instance.last_heartbeat,
             "guild_count": 0,
-            "user_count": 0,
             "guild_ids": [],
-            "user_ids": [],
         }
 
         # Add runtime info if bot is running
         if instance.client and instance.client.is_ready():
             status["guild_ids"] = [g.id for g in instance.client.guilds]
-            users = set()
-            for g in instance.client.guilds:
-                for m in getattr(g, "members", []):
-                    users.add(m.id)
-            status["user_ids"] = list(users)
             status["guild_count"] = len(status["guild_ids"])
-            status["user_count"] = len(users)
             status["latency"] = round(instance.client.latency * 1000, 2)  # ms
 
         return status
@@ -255,14 +337,15 @@ class BotManager:
             data_dir = os.path.join(config.data_dir, bot_id)
             os.makedirs(data_dir, exist_ok=True)
 
-            # Initialize personality engine with forced personality
+            # Initialize personality engine with configured personality (prefer new 'personality' field)
+            bot_personality = getattr(config, "personality", None) or config.force_personality
             personality_engine = PersonalityEngine(
-                db_path=os.path.join(data_dir, "personalities.db"), forced_personality=config.force_personality
+                db_path=os.path.join(data_dir, "personalities.db"), forced_personality=bot_personality
             )
             instance.personality_engine = personality_engine
 
-            # Store the forced personality for this bot instance
-            instance.forced_personality = config.force_personality
+            # Store the personality for this bot instance
+            instance.forced_personality = bot_personality
 
             # Initialize server manager for this bot (each bot gets its own data directory)
             server_manager = GrugServerManager(
@@ -282,8 +365,11 @@ class BotManager:
             # Import and setup bot commands (we'll need to modularize the existing bot.py)
             await self._setup_bot_commands(instance, bot_env)
 
-            # Start the bot in a separate task
-            instance.task = asyncio.create_task(client.start(config.discord_token))
+            # Start the bot in a separate task - get token from environment
+            discord_token = bot_env.get("DISCORD_TOKEN")
+            if not discord_token:
+                raise ValueError(f"No Discord token available for bot {config.bot_id}")
+            instance.task = asyncio.create_task(client.start(discord_token))
 
             # Give it a moment to start
             await asyncio.sleep(2)
@@ -371,51 +457,75 @@ class BotManager:
 
     def _create_bot_environment(self, config: BotConfig) -> Dict[str, str]:
         """Create environment variables for a specific bot."""
-        env = {}
+        discord_token = None
 
-        # Core configuration
-        env["DISCORD_TOKEN"] = config.discord_token
-        env["GRUGBOT_DATA_DIR"] = os.path.join(config.data_dir, config.bot_id)
-        env["LOG_LEVEL"] = config.log_level
-        env["LOAD_EMBEDDER"] = str(config.load_embedder)
+        # Try to get Discord token from ConfigManager first
+        if self.config_manager and config.discord_token_id != "legacy":
+            discord_token = self.config_manager.get_discord_token_by_id(config.discord_token_id)
+            if not discord_token:
+                raise ValueError(f"Discord token with ID '{config.discord_token_id}' not found")
 
-        # API keys - use bot-specific keys or fall back to global keys
-        if config.gemini_api_key:
-            env["GEMINI_API_KEY"] = config.gemini_api_key
-        elif self.config_manager:
-            global_gemini = self.config_manager.get_api_keys("gemini").get("primary")
-            if global_gemini:
-                env["GEMINI_API_KEY"] = global_gemini
+        # If ConfigManager available, use it for environment creation
+        if self.config_manager and discord_token:
+            template_id = getattr(config, "template_id", "evolution_bot")
 
-        # Gemini model configuration - use from .env file or default
-        env["GEMINI_MODEL"] = os.getenv("GEMINI_MODEL", "gemma-3-27b-it")
+            env = self.config_manager.create_bot_env(
+                template_id=template_id,
+                discord_token=discord_token,
+                LOG_LEVEL=config.log_level,
+                GRUGBOT_DATA_DIR=os.path.join(config.data_dir, config.bot_id),
+                LOAD_EMBEDDER=str(config.load_embedder),
+            )
 
-        if config.google_api_key:
-            env["GOOGLE_API_KEY"] = config.google_api_key
-        elif self.config_manager:
-            global_google = self.config_manager.get_api_keys("google_search").get("api_key")
-            if global_google:
-                env["GOOGLE_API_KEY"] = global_google
+            # Apply bot-specific overrides
+            if config.override_gemini_key:
+                env["GEMINI_API_KEY"] = config.override_gemini_key
+            if config.override_google_api_key:
+                env["GOOGLE_API_KEY"] = config.override_google_api_key
+            if config.override_google_cse_id:
+                env["GOOGLE_CSE_ID"] = config.override_google_cse_id
+            if config.override_ollama_urls:
+                env["OLLAMA_URLS"] = config.override_ollama_urls
+            if config.override_ollama_models:
+                env["OLLAMA_MODELS"] = config.override_ollama_models
+        else:
+            # Legacy mode: create environment manually
+            env = {}
 
-        if config.google_cse_id:
-            env["GOOGLE_CSE_ID"] = config.google_cse_id
-        elif self.config_manager:
-            global_cse = self.config_manager.get_api_keys("google_search").get("cse_id")
-            if global_cse:
-                env["GOOGLE_CSE_ID"] = global_cse
+            # For legacy tokens, check if bot instance has stored token
+            bot_instance = self.bots.get(config.bot_id)
+            if bot_instance and hasattr(bot_instance, "_legacy_discord_token"):
+                discord_token = bot_instance._legacy_discord_token
+            elif not discord_token:
+                raise ValueError(f"No Discord token available for bot {config.bot_id}")
 
-        if config.ollama_urls:
-            env["OLLAMA_URLS"] = config.ollama_urls
-        if config.ollama_models:
-            env["OLLAMA_MODELS"] = config.ollama_models
+            env["DISCORD_TOKEN"] = discord_token
+            env["GRUGBOT_DATA_DIR"] = os.path.join(config.data_dir, config.bot_id)
+            env["LOG_LEVEL"] = config.log_level
+            env["LOAD_EMBEDDER"] = str(config.load_embedder)
+
+            # Legacy API key handling
+            if config.override_gemini_key:
+                env["GEMINI_API_KEY"] = config.override_gemini_key
+            if config.override_google_api_key:
+                env["GOOGLE_API_KEY"] = config.override_google_api_key
+            if config.override_google_cse_id:
+                env["GOOGLE_CSE_ID"] = config.override_google_cse_id
+            if config.override_ollama_urls:
+                env["OLLAMA_URLS"] = config.override_ollama_urls
+            if config.override_ollama_models:
+                env["OLLAMA_MODELS"] = config.override_ollama_models
+
+        # Common configuration
         if config.trusted_user_ids:
             env["TRUSTED_USER_IDS"] = config.trusted_user_ids
         elif os.getenv("TRUSTED_USER_IDS"):
             env["TRUSTED_USER_IDS"] = os.getenv("TRUSTED_USER_IDS")
 
-        # Personality configuration
-        if config.force_personality:
-            env["FORCE_PERSONALITY"] = config.force_personality
+        # Personality configuration (prefer new 'personality' field over deprecated 'force_personality')
+        personality = getattr(config, "personality", None) or config.force_personality
+        if personality:
+            env["FORCE_PERSONALITY"] = personality
 
         return env
 

@@ -13,7 +13,7 @@ Thank you for contributing to GrugThink! This guide will help you get started wi
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/grugthink.git
+git clone https://github.com/githumps/grugthink.git
 cd grugthink
 
 # Create Python virtual environment
@@ -23,7 +23,7 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt -r requirements-dev.txt
 
-# Copy configuration
+# Copy configuration (or use existing grugthink_config.yaml)
 cp grugthink_config.yaml.example grugthink_config.yaml
 # Edit with your Discord tokens and API keys
 ```

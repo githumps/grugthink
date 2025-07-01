@@ -34,3 +34,4 @@ models/
 */.cache/grugthink/
 bot_configs.json
 grugthink_config.yaml
+*.backup

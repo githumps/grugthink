@@ -16,6 +16,7 @@ sys.path.insert(0, str(src_dir))
 
 def main():
     """Main entry point that delegates to appropriate module."""
+    print(f"[DEBUG] grugthink.py main() called with args: {sys.argv}")
     if len(sys.argv) > 1 and sys.argv[1] == "multi-bot":
         # Multi-bot container mode
         import asyncio

@@ -47,7 +47,8 @@ class GrugThinkContainer:
         """Start the container system."""
         try:
             self.running = True
-            log.info("Starting GrugThink Container")
+            log.info("Starting GrugThink Container", extra={"start_bots": start_bots, "api_port": api_port})
+            print(f"[DEBUG] GrugThink Container starting: start_bots={start_bots}, api_port={api_port}")
 
             # Start configuration change monitoring
             self.config_manager.add_change_callback(self._on_config_change)
@@ -57,8 +58,14 @@ class GrugThinkContainer:
             self.tasks.append(monitoring_task)
 
             # Start all configured bots if requested
+            print(f"[DEBUG] start_bots parameter is: {start_bots}")
             if start_bots:
+                print("[DEBUG] About to call _start_configured_bots")
+                log.info("About to call _start_configured_bots")
                 await self._start_configured_bots()
+            else:
+                print("[DEBUG] Skipping bot auto-start (start_bots=False)")
+                log.info("Skipping bot auto-start (start_bots=False)")
 
             # Start API server in background
             api_task = asyncio.create_task(self._run_api_server(api_port))
@@ -79,11 +86,31 @@ class GrugThinkContainer:
 
     async def _start_configured_bots(self):
         """Start all bots marked for auto-start in configuration."""
+        log.info("_start_configured_bots called - checking for bots to auto-start")
         try:
             bots = self.bot_manager.list_bots()
-            auto_start_bots = [
-                bot for bot in bots if self.config_manager.get_config(f"bots.{bot['bot_id']}.auto_start") is not False
-            ]
+            log.info(
+                "Found bots in configuration",
+                extra={"bot_count": len(bots), "bot_ids": [b.get("bot_id") for b in bots]},
+            )
+            auto_start_bots = []
+
+            for bot in bots:
+                # Check auto_start flag first, then fall back to status field
+                auto_start_flag = self.config_manager.get_config(f"bot_configs.{bot['bot_id']}.auto_start")
+                bot_status = self.config_manager.get_config(f"bot_configs.{bot['bot_id']}.status")
+
+                log.info(
+                    "Checking bot for auto-start",
+                    extra={"bot_id": bot.get("bot_id"), "auto_start_flag": auto_start_flag, "bot_status": bot_status},
+                )
+
+                # Priority: explicit auto_start flag, then status "running"
+                should_start = auto_start_flag is True or (auto_start_flag is None and bot_status == "running")
+
+                if should_start:
+                    auto_start_bots.append(bot)
+                    log.info("Bot marked for auto-start", extra={"bot_id": bot.get("bot_id")})
 
             if auto_start_bots:
                 log.info("Starting configured bots", extra={"count": len(auto_start_bots)})
@@ -151,6 +178,7 @@ class GrugThinkContainer:
 
 async def main():
     """Main entry point."""
+    print("[DEBUG] main() function called in grugthink/main.py")
     # Load .env file if it exists
     try:
         from dotenv import load_dotenv

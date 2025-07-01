@@ -16,27 +16,51 @@ This guide covers deploying GrugThink in production environments.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/grugthink.git
+git clone https://github.com/githumps/grugthink.git
 cd grugthink
 
 # Create configuration file
 cp grugthink_config.yaml.example grugthink_config.yaml
 ```
 
-Edit `grugthink_config.yaml` with your Discord tokens and API keys:
+**GrugThink uses a single YAML configuration file** - no .env files needed!
+
+Edit `grugthink_config.yaml` with your settings:
 
 ```yaml
 api_keys:
   discord:
     tokens:
-      - name: "My Bot"
-        token: "YOUR_DISCORD_BOT_TOKEN"
-        active: true
+    - id: '1'
+      name: "My Production Bot"
+      token: "YOUR_DISCORD_BOT_TOKEN"
+      active: true
   gemini:
-    primary: "YOUR_GEMINI_API_KEY"  # Optional
+    primary: "YOUR_GEMINI_API_KEY"  # For AI responses
   google_search:
-    api_key: "YOUR_GOOGLE_API_KEY"  # Optional
-    cse_id: "YOUR_CSE_ID"           # Optional
+    api_key: "YOUR_GOOGLE_API_KEY"  # For web search
+    cse_id: "YOUR_CSE_ID"
+
+environment:
+  # Discord OAuth for web dashboard
+  DISCORD_CLIENT_ID: "YOUR_DISCORD_APP_CLIENT_ID"
+  DISCORD_CLIENT_SECRET: "YOUR_DISCORD_APP_CLIENT_SECRET" 
+  DISCORD_REDIRECT_URI: "https://yourdomain.com/callback"
+  
+  # Who can access the dashboard
+  TRUSTED_USER_IDS: "YOUR_DISCORD_USER_ID"
+  
+  # Bot settings
+  LOG_LEVEL: "INFO"
+  GRUGBOT_VARIANT: "prod"
+
+bot_configs:
+  production-grug:
+    bot_id: production-grug
+    name: "Production Grug Bot"
+    discord_token_id: '1'  # References token above
+    template_id: pure_grug
+    force_personality: grug
 ```
 
 ### 2. Deploy
@@ -203,6 +227,6 @@ cp bot_configs.json bot_configs.json.backup
 ### Support
 
 For additional support:
-- [GitHub Issues](https://github.com/your-org/grugthink/issues)
+- [GitHub Issues](https://github.com/githumps/grugthink/issues)
 - [Security Issues](docs/SECURITY.md)
 - [Contributing Guide](docs/CONTRIBUTING.md)

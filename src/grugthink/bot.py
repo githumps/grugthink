@@ -207,12 +207,23 @@ def get_cache_key(statement: str) -> str:
     return hashlib.md5(statement.encode()).hexdigest()
 
 
-def is_rate_limited(user_id: int) -> bool:
+def is_rate_limited(user_id: int, bot_id: str = None) -> bool:
+    """Check if user is rate limited for a specific bot or globally."""
     now = time.time()
-    if user_id in user_cooldowns and now - user_cooldowns[user_id] < 5:
-        return True
-    user_cooldowns[user_id] = now
-    return False
+
+    if bot_id:
+        # Check per-bot rate limiting (allows multiple bots to respond)
+        key = f"{user_id}:{bot_id}"
+        if key in user_cooldowns and now - user_cooldowns[key] < 5:
+            return True
+        user_cooldowns[key] = now
+        return False
+    else:
+        # Global rate limiting (legacy behavior)
+        if user_id in user_cooldowns and now - user_cooldowns[user_id] < 5:
+            return True
+        user_cooldowns[user_id] = now
+        return False
 
 
 def extract_lore_from_response(response: str, server_db, personality_name: str = None):
@@ -424,6 +435,10 @@ class GrugThinkBot(commands.Cog):
             # Single-bot mode: fallback to the global server manager
             return get_server_db(interaction_or_guild_id)
 
+    def get_bot_id(self):
+        """Get the bot ID for logging purposes."""
+        return getattr(self.bot_instance.config, "bot_id", "unknown-bot")
+
     @commands.Cog.listener()
     async def on_ready(self):
         log.info("Logged in to Discord", extra={"user": str(self.client.user)})
@@ -447,10 +462,16 @@ class GrugThinkBot(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         """Handle incoming messages and detect name mentions for auto-verification."""
-        # Ignore messages from bots, except for Markov bots
+        # Ignore messages from bots, except for Markov bots and other GrugThink bots
         if message.author.bot:
-            # Only allow interaction with bots whose username contains "Markov"
-            if "markov" not in message.author.name.lower():
+            # Allow interaction with Markov bots
+            is_markov_bot = "markov" in message.author.name.lower()
+            # Allow interaction with other GrugThink bots (check if message mentions this bot)
+            is_mentioning_this_bot = self.client.user and (
+                f"<@{self.client.user.id}>" in message.content or f"<@!{self.client.user.id}>" in message.content
+            )
+            # Allow if it's a Markov bot, or if another bot is mentioning this specific bot
+            if not (is_markov_bot or is_mentioning_this_bot):
                 return
 
         # Process commands first
@@ -484,8 +505,10 @@ class GrugThinkBot(commands.Cog):
 
     async def handle_auto_verification(self, message, server_id: str, personality):
         """Handle automatic verification when bot name is mentioned."""
-        # Log if this is a Markov bot interaction
+        # Log if this is a bot interaction
         is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
+        is_other_grugthink_bot = message.author.bot and not is_markov_bot
+
         if is_markov_bot:
             log.info(
                 "Markov bot interaction",
@@ -495,9 +518,19 @@ class GrugThinkBot(commands.Cog):
                     "message_length": len(message.content),
                 },
             )
+        elif is_other_grugthink_bot:
+            log.info(
+                "GrugThink bot interaction",
+                extra={
+                    "bot_id": self.get_bot_id(),
+                    "other_bot_name": message.author.name,
+                    "server_id": server_id,
+                    "message_length": len(message.content),
+                },
+            )
 
-        # Rate limiting check
-        if is_rate_limited(message.author.id):
+        # Rate limiting check (per-bot to allow multiple bots to respond)
+        if is_rate_limited(message.author.id, self.get_bot_id()):
             # Send a brief rate limit message
             if personality.response_style == "caveman":
                 await message.channel.send("Grug need rest. Wait little.", delete_after=5)
@@ -533,6 +566,15 @@ class GrugThinkBot(commands.Cog):
                     response = "alright robot mate, wot you sayin, nuff said"
                 else:
                     response = "Hello fellow bot! What would you like me to verify?"
+            elif is_other_grugthink_bot:
+                # Special responses for other GrugThink bot interactions
+                other_bot_name = message.author.display_name or message.author.name
+                if personality.response_style == "caveman":
+                    response = f"{bot_name} hear {other_bot_name} call! What {other_bot_name} want know?"
+                elif personality.response_style == "british_working_class":
+                    response = f"alright {other_bot_name} mate, wot you after then, nuff said"
+                else:
+                    response = f"Hello {other_bot_name}! What would you like me to verify?"
             else:
                 # Normal human responses
                 if personality.response_style == "caveman":
@@ -554,6 +596,14 @@ class GrugThinkBot(commands.Cog):
                 thinking_msg = f"{bot_name_display} checkin wot robot mate said..."
             else:
                 thinking_msg = f"{bot_name_display} analyzing bot input..."
+        elif is_other_grugthink_bot:
+            other_bot_name = message.author.display_name or message.author.name
+            if personality.response_style == "caveman":
+                thinking_msg = f"{bot_name_display} think about {other_bot_name} words..."
+            elif personality.response_style == "british_working_class":
+                thinking_msg = f"{bot_name_display} checkin wot {other_bot_name} said..."
+            else:
+                thinking_msg = f"{bot_name_display} considering {other_bot_name}'s statement..."
         else:
             thinking_msg = f"{bot_name_display} thinking..."
 
@@ -577,12 +627,14 @@ class GrugThinkBot(commands.Cog):
                 log.info(
                     "Auto-verification completed",
                     extra={
+                        "bot_id": self.get_bot_id(),
                         "user_id": str(message.author.id),
                         "server_id": server_id,
                         "statement_length": len(clean_content),
                         "result_length": len(styled_result),
                         "is_markov_bot": is_markov_bot,
-                        "author_name": message.author.name if is_markov_bot else None,
+                        "is_grugthink_bot": is_other_grugthink_bot,
+                        "author_name": message.author.name if (is_markov_bot or is_other_grugthink_bot) else None,
                     },
                 )
             else:
@@ -593,7 +645,12 @@ class GrugThinkBot(commands.Cog):
         except Exception as exc:
             log.error(
                 "Auto-verification error",
-                extra={"error": str(exc), "user_id": str(message.author.id), "server_id": server_id},
+                extra={
+                    "bot_id": self.get_bot_id(),
+                    "error": str(exc),
+                    "user_id": str(message.author.id),
+                    "server_id": server_id,
+                },
             )
             # Use personality for error message
             error_msg = self.personality_engine.get_error_message(server_id)
@@ -601,7 +658,7 @@ class GrugThinkBot(commands.Cog):
 
     @app_commands.command(name="verify", description="Verify the truthfulness of the previous message.")
     async def verify(self, interaction: discord.Interaction):
-        if is_rate_limited(interaction.user.id):
+        if is_rate_limited(interaction.user.id, self.get_bot_id()):
             await interaction.response.send_message("Slow down! Wait a few seconds.", ephemeral=True)
             return
 
@@ -615,7 +672,7 @@ class GrugThinkBot(commands.Cog):
         target = history[0].content
         log.info(
             "Verify command initiated",
-            extra={"user_id": str(interaction.user.id), "target_length": len(target)},
+            extra={"bot_id": self.get_bot_id(), "user_id": str(interaction.user.id), "target_length": len(target)},
         )
 
         await interaction.response.defer(ephemeral=False)  # Tell Discord the bot is thinking
@@ -686,6 +743,7 @@ class GrugThinkBot(commands.Cog):
             log.info(
                 "Fact learned",
                 extra={
+                    "bot_id": self.get_bot_id(),
                     "user_id": str(interaction.user.id),
                     "fact_length": len(fact),
                     "server_id": str(interaction.guild_id),
