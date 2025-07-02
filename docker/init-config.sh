@@ -44,14 +44,10 @@ templates:
 EOF
 fi
 
-# Create bot_configs.json if it doesn't exist
-if [ ! -f /app/bot_configs.json ]; then
-    echo "Creating empty bot_configs.json..."
-    echo "[]" > /app/bot_configs.json
-fi
+# bot_configs.json is deprecated - all configuration is now in grugthink_config.yaml
 
 # Ensure config files have proper permissions
-chown grugthink:grugthink /app/grugthink_config.yaml /app/bot_configs.json
-chmod 644 /app/grugthink_config.yaml /app/bot_configs.json
+chown grugthink:grugthink /app/grugthink_config.yaml
+chmod 644 /app/grugthink_config.yaml
 
 echo "Configuration files initialized successfully."
