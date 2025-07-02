@@ -46,8 +46,9 @@ fi
 
 # bot_configs.json is deprecated - all configuration is now in grugthink_config.yaml
 
-# Ensure config files have proper permissions
-chown grugthink:grugthink /app/grugthink_config.yaml
-chmod 644 /app/grugthink_config.yaml
+# Ensure config files have proper permissions (only if we have permission)
+if [ -w /app/grugthink_config.yaml ]; then
+    chmod 644 /app/grugthink_config.yaml 2>/dev/null || true
+fi
 
 echo "Configuration files initialized successfully."

@@ -12,4 +12,5 @@ services:
     environment:
       - LOG_LEVEL=INFO
       - GRUGBOT_DATA_DIR=/data
+    user: "1000:1000"  # Run as user ID 1000 to match host permissions
     restart: unless-stopped

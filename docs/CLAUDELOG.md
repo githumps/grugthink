@@ -86,6 +86,22 @@ This file tracks all changes made by Claude during development sessions.
 
 **Implementation**: Documented semantic versioning, release naming conventions, and emergency hotfix process.
 
+#### Fixed GitHub Actions Release Workflow (High Priority)
+**Problem**: GitHub Actions build failed due to referencing non-existent Docker path `docker/multi-bot/Dockerfile.multibot`.
+
+**Root Cause**: Workflow was using old Docker structure path after simplification to single `docker/Dockerfile`.
+
+**Solution**: Fixed release workflow and provided cleanup instructions:
+- **Updated `.github/workflows/release.yml`**: Changed Dockerfile path to `docker/Dockerfile`
+- **Cleanup Guide**: Created `CLEANUP_FAILED_RELEASE.md` with steps to remove failed v3.3.0 release
+- **Tag Management**: Instructions for deleting and recreating git tags
+
+**Files Modified**:
+- `.github/workflows/release.yml:45` - Updated Dockerfile path
+- `CLEANUP_FAILED_RELEASE.md` - Cleanup and re-release instructions
+
+**Resolution**: Workflow now builds with correct Docker structure, ready for successful v3.3.0 release.
+
 ## Session: 2025-07-01 - Bug Fixes, UI Improvements, and Deep Codebase Review
 
 ### Overview
