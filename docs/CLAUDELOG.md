@@ -4,6 +4,56 @@ This file tracks all changes made by Claude during development sessions.
 
 # Claude Development Log
 
+## Session: 2025-07-02 - Fixed Bot Insult Timing Issue & Expanded Insult Variety
+
+### Overview
+1. Fixed timing issue where cross-bot insults were being sent before the main bot response completed
+2. Expanded insult variety with 12 unique insults per personality type for more engaging bot interactions
+
+### Issues Addressed
+
+#### Bot Insult Timing Fix (High Priority)
+**Problem**: When a bot mentioned another bot in their response, the mentioned bot would immediately send an insult message before the original bot finished their main response. This caused the insult to appear before the bot's actual reply.
+
+**Root Cause**: The insult logic in `on_message` handler was executing immediately when another bot mentioned this bot, without waiting for the original bot to complete their response (including deleting "Thinking..." message and posting final reply).
+
+**Solution**: Added 2-second delay using `await asyncio.sleep(2)` before sending insult message to allow main response to complete first.
+
+#### Expanded Insult Variety (Medium Priority)
+**Problem**: Bots were using the same repetitive insults ("Big Rob weak. Grug strongest!" and "oi Grug, pipe down ya muppet"), making cross-bot interactions predictable and boring.
+
+**Solution**: Added 12 unique insults per personality type with random selection:
+- **Caveman (Grug)**: Cave-themed insults with mammoth, rock, and hunting references
+- **British Working Class (Big Rob)**: UK slang insults with authentic dialect
+- **Adaptive**: More sophisticated, analytical insults matching the personality
+
+**Implementation**: Enhanced `generate_shit_talk()` function with personality-specific insult arrays and `random.choice()` selection.
+
+**Files Modified**:
+- `src/grugthink/bot.py:135-199` - Expanded generate_shit_talk function with 12 insults per personality
+- `src/grugthink/bot.py:620` - Added delay before sending cross-bot insult
+
+**Testing**: All existing tests pass, ensuring no regression in bot functionality.
+
+#### Enhanced Cross-Bot Knowledge Sharing (High Priority)
+**Problem**: Bots had limited knowledge about each other's personalities and traits, leading to generic cross-bot interactions despite rich personality systems.
+
+**Root Cause**: The existing cross-bot memory system only accessed other bots' learned facts but not their personality information, traits, or background elements.
+
+**Solution**: Enhanced cross-bot knowledge sharing with personality information:
+- **New Function**: Added `get_cross_bot_personality_info()` to access personality data from bot manager
+- **Global Bot Manager**: Added global reference in `main.py` for cross-bot access
+- **Enhanced Memory Context**: Modified `get_cross_bot_memories()` to include personality context
+- **Intelligent Matching**: Added bot name pattern matching for better personality identification
+- **Rich Context**: Bots now know each other as "caveman who fights sabertooths" vs "British working class lad"
+
+**Implementation**: 
+- Added global `_global_bot_manager` reference in `main.py:24-29,41-42`
+- Enhanced `get_cross_bot_memories()` with personality context in `bot.py:422-556`
+- Added fallback personality data for single-bot mode
+
+**Result**: Bots now have rich knowledge about each other's personalities, enabling more authentic interactions like "Big Rob knows Grug is a caveman" and "Grug knows Big Rob is clumsy".
+
 ## Session: 2025-07-01 - Bug Fixes, UI Improvements, and Deep Codebase Review
 
 ### Overview
@@ -2077,3 +2127,47 @@ User discovered that README.md referenced `grugthink_config.yaml.example` file t
 - **Working commands**: All documented installation/deployment commands work
 - **Professional presentation**: No broken links or placeholder text
 - **User experience**: Clear, accurate instructions from clone to deployment
+
+## Session: 2025-07-03 - Cross-Bot Insult Enhancement
+
+### Overview
+Implemented refined cross-bot insult logic so bots respond with a single jab when another bot mentions them.
+
+### Changes Made ✅
+- Added `generate_shit_talk` helper in `bot.py` for personality-aware insults.
+- Updated `handle_auto_verification` to append short insults once per mention.
+- Updated changelog with new feature description.
+- Ensured lint and tests all pass (43 passed, 1 skipped).
+
+## Session: 2025-07-04 - Separate Insult Messages
+
+### Overview
+Fixed cross-bot insult logic so bots send their jab as its own message rather than appending it to responses.
+
+### Changes Made ✅
+- Simplified `handle_auto_verification` and moved insult handling to `on_message`.
+- Bots now detect when other bots mention them and reply once with a short insult message.
+- Changelog updated to document the behavioral change.
+
+
+## Session: 2025-07-05 - Pairwise Insult Control
+
+### Overview
+Improved cross-bot insult handling so bots trade only one jab each after a human mention, preventing endless fights.
+
+### Changes Made ✅
+- Introduced `_pair_key` helper and LRU cache to track bot pairs
+- Updated `on_message` logic to mark responses per pair
+- Changelog entry noting fix for infinite insult loops
+
+## Session: 2025-07-06 - Lazy Bot Import and Topic Context Tweak
+
+### Overview
+Addressed startup failure when `DISCORD_TOKEN` was missing and reduced cross-bot
+quote spam.
+
+### Changes Made ✅
+- Removed eager import of `bot` in `__init__`; added `__getattr__` for lazy load
+  so package can import without environment variables.
+- Limited cross-bot topic context to human messages without other bot mentions.
+- Updated changelog with the fixes.

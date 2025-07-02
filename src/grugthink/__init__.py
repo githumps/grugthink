@@ -41,3 +41,13 @@ __all__ = [
 # Only export APIServer if available
 if _API_SERVER_AVAILABLE:
     __all__.append("APIServer")
+
+
+def __getattr__(name: str):
+    """Lazy import optional submodules."""
+    if name == "bot":
+        import importlib
+
+        _bot = importlib.import_module(".bot", __name__)
+        return _bot
+    raise AttributeError(name)

@@ -65,7 +65,8 @@ user_cooldowns = {}
 
 # Cross-bot interaction tracking
 cross_bot_mentions = LRUCache(max_size=200, ttl_seconds=600)  # Track mentions for 10 minutes
-cross_bot_responses = {}  # Track if bots have already responded to each other
+# Track if bots have already fired back at each other for a given conversation
+cross_bot_responses = LRUCache(max_size=200, ttl_seconds=600)
 cross_bot_topic_responses = LRUCache(max_size=100, ttl_seconds=1800)  # Store bot responses by topic for 30 minutes
 
 # Initialize Server Manager and Personality Engine
@@ -123,6 +124,79 @@ def store_bot_response_for_cross_reference(response: str, personality_name: str)
             "Stored bot response for cross-reference",
             extra={"bot_name": personality_name, "topic": topic, "response": response[:100]},
         )
+
+
+def _pair_key(name_a: str, name_b: str, server_id: str, channel_id: str) -> str:
+    """Return a normalized key for tracking two bots interacting."""
+    names = sorted([name_a.lower(), name_b.lower()])
+    return f"{server_id}:{channel_id}:{names[0]}:{names[1]}"
+
+
+def generate_shit_talk(target_name: str, style: str) -> str:
+    """Return a short insult aimed at another bot."""
+    import random
+
+    target = target_name.strip()
+
+    if style == "caveman":
+        caveman_insults = [
+            f"{target} weak. Grug strongest!",
+            f"{target} soft like mammoth belly!",
+            f"Grug smash {target} with big rock!",
+            f"{target} no can hunt. Grug better!",
+            f"{target} brain small like pebble!",
+            f"Grug eat {target} for breakfast!",
+            f"{target} weaker than sick woolly!",
+            f"Grug club {target} into next cave!",
+            f"{target} no know fire. Grug know fire!",
+            f"{target} run from sabertooth. Grug fight sabertooth!",
+            f"Grug throw {target} into tar pit!",
+            f"{target} hide in cave like scared rabbit!",
+        ]
+        return random.choice(caveman_insults)
+
+    elif style == "british_working_class":
+        british_insults = [
+            f"oi {target}, pipe down ya muppet",
+            f"{target}'s a right tosser, innit",
+            f"get stuffed {target}, you plonker",
+            f"{target} couldn't organize a piss-up in a brewery",
+            f"shut it {target}, you absolute weapon",
+            f"{target}'s thick as two short planks",
+            f"do one {target}, ya numpty",
+            f"{target} talks pure waffle, simple as",
+            f"wind your neck in {target}, you melt",
+            f"{target}'s got more issues than a newsstand",
+            f"bore off {target}, you proper div",
+            f"{target} couldn't find water in a swimming pool",
+        ]
+        return random.choice(british_insults)
+
+    elif style == "adaptive":
+        adaptive_insults = [
+            f"{target} clearly clueless",
+            f"{target} needs a reality check",
+            f"{target} talking nonsense again",
+            f"{target} should stick to lurking",
+            f"{target}'s logic is fundamentally flawed",
+            f"{target} missed the point entirely",
+            f"{target} needs to recalibrate their thinking",
+            f"{target}'s analysis is rather shallow",
+            f"{target} should consider alternative perspectives",
+            f"{target}'s reasoning lacks nuance",
+            f"{target} demonstrates poor comprehension",
+            f"{target} fails to grasp the complexity here",
+        ]
+        return random.choice(adaptive_insults)
+
+    # Default fallback insults for unknown styles
+    default_insults = [
+        f"{target} clearly clueless",
+        f"{target} needs a reality check",
+        f"{target} talking nonsense again",
+        f"{target} should stick to lurking",
+    ]
+    return random.choice(default_insults)
 
 
 def get_server_db(interaction_or_guild_id):
@@ -345,6 +419,59 @@ def search_google(query: str) -> str:
     return ""
 
 
+def get_cross_bot_personality_info(server_id: str = "global") -> dict:
+    """Get personality information about other bots in the system."""
+    personality_info = {}
+    try:
+        # In multi-bot mode, try to access bot manager for personality information
+        from .main import get_bot_manager
+
+        bot_manager = get_bot_manager()
+        if bot_manager:
+            for bot_id, bot_instance in bot_manager.bots.items():
+                try:
+                    # Get the bot's personality for this server
+                    personality = bot_instance.personality_engine.get_personality(server_id)
+                    bot_name = personality.chosen_name or personality.name
+
+                    # Create a recognizable key from bot name
+                    personality_info[bot_id] = {
+                        "name": bot_name,
+                        "response_style": personality.response_style,
+                        "personality_traits": personality.personality_traits,
+                        "background_elements": personality.background_elements,
+                    }
+
+                    # Also add by name for easier lookup
+                    name_key = bot_name.lower().replace(" ", "_")
+                    personality_info[name_key] = personality_info[bot_id]
+
+                except Exception as e:
+                    log.debug("Could not access bot personality", extra={"bot_id": bot_id, "error": str(e)})
+    except ImportError:
+        # Not in multi-bot mode, provide fallback personality info for known bots
+        personality_info.update(
+            {
+                "grug": {
+                    "name": "Grug",
+                    "response_style": "caveman",
+                    "personality_traits": {"strength": "physical", "intelligence": "primitive"},
+                    "background_elements": ["lives in cave", "hunts mammoth", "uses primitive tools"],
+                },
+                "big_rob": {
+                    "name": "Big Rob",
+                    "response_style": "british_working_class",
+                    "personality_traits": {"strength": "opiniated", "intelligence": "street_smart"},
+                    "background_elements": ["British working class", "football fan", "strong opinions"],
+                },
+            }
+        )
+    except Exception as e:
+        log.debug("Could not access bot manager", extra={"error": str(e)})
+
+    return personality_info
+
+
 def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str = None) -> str:
     """Get memories from other bots in the same server for context."""
     try:
@@ -353,6 +480,9 @@ def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str =
         # Try to access other bot databases if available
         # This will only work in multi-bot mode where we can access the bot manager
         cross_bot_context = ""
+
+        # Get personality information about other bots
+        personality_info = get_cross_bot_personality_info(server_id)
 
         # For now, we'll implement a simple system that looks for other bot data directories
         # In a more advanced implementation, this could access the BotManager directly
@@ -372,7 +502,52 @@ def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str =
                             temp_db = temp_manager.get_server_db(server_id)
                             relevant_facts = temp_db.search_facts(statement, k=2)
                             if relevant_facts:
-                                cross_bot_context += f" {bot_dir} remembers: {' '.join(relevant_facts[:2])}"
+                                bot_info = ""
+                                # Add personality context if available
+                                # Try multiple ways to match bot identity
+                                matched_personality = None
+
+                                # Try exact bot_dir match first
+                                if bot_dir in personality_info:
+                                    matched_personality = personality_info[bot_dir]
+                                else:
+                                    # Try matching by common bot name patterns
+                                    bot_dir_lower = bot_dir.lower()
+                                    for key in personality_info:
+                                        if (
+                                            key in bot_dir_lower
+                                            or bot_dir_lower in key
+                                            or (key == "grug" and "grug" in bot_dir_lower)
+                                            or (key == "big_rob" and ("rob" in bot_dir_lower or "big" in bot_dir_lower))
+                                        ):
+                                            matched_personality = personality_info[key]
+                                            break
+
+                                if matched_personality:
+                                    style = matched_personality.get("response_style", "")
+                                    traits = matched_personality.get("personality_traits", {})
+                                    bot_name = matched_personality.get("name", bot_dir)
+
+                                    if style == "caveman":
+                                        bot_info = f" ({bot_name} - caveman who fights sabertooths and hunts mammoth)"
+                                    elif style == "british_working_class":
+                                        bot_info = f" ({bot_name} - British working class lad with football opinions)"
+                                    elif style == "adaptive":
+                                        bot_info = f" ({bot_name} - adaptive bot that learns and evolves)"
+                                    else:
+                                        bot_info = f" ({bot_name})"
+
+                                    # Add specific traits if they exist
+                                    if traits:
+                                        key_traits = []
+                                        if "strength" in traits:
+                                            key_traits.append(f"strength: {traits['strength']}")
+                                        if "intelligence" in traits:
+                                            key_traits.append(f"smarts: {traits['intelligence']}")
+                                        if key_traits:
+                                            bot_info += f" [{', '.join(key_traits)}]"
+
+                                cross_bot_context += f" {bot_dir}{bot_info} remembers: {' '.join(relevant_facts[:2])}"
                         except Exception as e:
                             log.debug(
                                 "Could not access cross-bot memories", extra={"bot_dir": bot_dir, "error": str(e)}
@@ -561,40 +736,58 @@ class GrugThinkBot(commands.Cog):
     async def on_message(self, message):
         """Handle incoming messages and detect name mentions for auto-verification."""
         # Ignore messages from bots, except for Markov bots and other GrugThink bots
+        is_markov_bot = False
         if message.author.bot:
-            # Allow interaction with Markov bots
             is_markov_bot = "markov" in message.author.name.lower()
-            # Allow interaction with other GrugThink bots (check if message mentions this bot)
-            is_mentioning_this_bot = self.client.user and (
-                f"<@{self.client.user.id}>" in message.content or f"<@!{self.client.user.id}>" in message.content
-            )
-            # Allow if it's a Markov bot, or if another bot is mentioning this specific bot
-            if not (is_markov_bot or is_mentioning_this_bot):
-                return
-
-        # Process commands first
-        await self.client.process_commands(message)
 
         # Get personality for this server
         server_id = str(message.guild.id) if message.guild else "dm"
         personality = self.personality_engine.get_personality(server_id)
         bot_name = personality.chosen_name or personality.name
 
-        # Check for cross-bot mentions in ANY message (bot or human) and store them
-        # This allows us to track when any message mentions other bots
+        # Detect and store cross-bot mentions from all messages
         mentioned_bots = self.detect_cross_bot_mentions(message)
         if mentioned_bots:
             message_author = message.author.display_name or message.author.name
-
-            # Store the mention with proper attribution
             if message.author.bot:
-                # If it's a bot message, use the bot name as the mentioning entity
                 self.store_cross_bot_mention(message_author, mentioned_bots, message)
             else:
-                # If it's a human message, store it as a general mention
                 self.store_cross_bot_mention(f"user:{message_author}", mentioned_bots, message)
 
-        # Check if bot name is mentioned in the message
+        # If another bot explicitly talks about this bot, fire back with a short insult once
+        if (
+            message.author.bot
+            and self.is_bot_mentioned(message.content, bot_name)
+            and message.author != self.client.user
+            and not is_markov_bot
+        ):
+            channel_id = str(message.channel.id)
+            other_name = message.author.display_name or message.author.name
+            pair_key = _pair_key(other_name, bot_name, server_id, channel_id)
+            pair_state = cross_bot_responses.get(pair_key)
+            if pair_state is None:
+                pair_state = {other_name.lower(): True, bot_name.lower(): False}
+            else:
+                pair_state[other_name.lower()] = True
+
+            if not pair_state.get(bot_name.lower(), False):
+                pair_state[bot_name.lower()] = True
+                cross_bot_responses.put(pair_key, pair_state)
+                insult = generate_shit_talk(other_name, personality.response_style)
+                # Wait a moment to let the other bot finish their main response first
+                await asyncio.sleep(2)
+                await message.channel.send(insult)
+            else:
+                cross_bot_responses.put(pair_key, pair_state)
+            return
+
+        if message.author.bot and not is_markov_bot:
+            # Ignore other bot messages that don't mention us
+            return
+        # Process commands first
+        await self.client.process_commands(message)
+
+        # Check if bot name is mentioned in the message by a human
         if self.is_bot_mentioned(message.content, bot_name):
             if is_rate_limited(message.author.id, self.get_bot_id()):
                 if personality.response_style == "caveman":
@@ -604,7 +797,7 @@ class GrugThinkBot(commands.Cog):
                 else:
                     await message.channel.send("Please wait a moment.", delete_after=5)
                 return
-            await self.handle_auto_verification(message, server_id, personality)
+            await self.handle_auto_verification(message, server_id, personality, mentioned_bots)
 
     def is_bot_mentioned(self, content: str, bot_name: str) -> bool:
         """Check if the bot name is mentioned in the message content."""
@@ -871,7 +1064,7 @@ class GrugThinkBot(commands.Cog):
 
         return list(set(mentioned_bots))  # Remove duplicates
 
-    async def handle_auto_verification(self, message, server_id: str, personality):
+    async def handle_auto_verification(self, message, server_id: str, personality, mentioned_bots=None):
         """Handle automatic verification when bot name is mentioned."""
         # Log if this is a bot interaction
         is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
@@ -912,57 +1105,23 @@ class GrugThinkBot(commands.Cog):
         # Clean up extra whitespace
         clean_content = re.sub(r"\s+", " ", clean_content).strip()
 
-        # Check for recent mentions about this bot and prepare cross-bot response
-        channel_id = str(message.channel.id)
-        recent_mentions = self.get_recent_mentions_about_bot(bot_name, server_id, channel_id)
+        # Prepare contextual info from other bots (only for human messages that
+        # don't mention other bots)
         cross_bot_context = ""
+        mentioned_bots = mentioned_bots or []
 
-        # Also check for topic-based cross-bot responses
-        topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
+        if not message.author.bot and not mentioned_bots:
+            topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
 
-        if recent_mentions:
-            # Only process mentions from other BOTS, not users
-            bot_mentions = [m for m in recent_mentions if not m.get("mentioning_bot", "").startswith("user:")]
-
-            if bot_mentions:
-                latest_mention = bot_mentions[0]
-                mentioning_source = latest_mention.get("mentioning_bot", "another bot")
-                mention_content = latest_mention.get("message_content", "")
-
-                # Create a unique key to track if we've already responded to this cross-reference
-                response_key = f"{server_id}:{channel_id}:{latest_mention.get('message_id')}:{self.get_bot_id()}"
-
-                if response_key not in cross_bot_responses:
-                    cross_bot_responses[response_key] = time.time()
-
-                    if personality.response_style == "caveman":
-                        cross_bot_context = f" Grug hear {mentioning_source} say about Grug: '{mention_content[:80]}'. "
-                    elif personality.response_style == "british_working_class":
-                        cross_bot_context = (
-                            f" Heard {mentioning_source} been chattin bout me: '{mention_content[:80]}' - "
-                        )
-                    else:
-                        cross_bot_context = f" I noticed {mentioning_source} mentioned me: '{mention_content[:80]}'. "
-
-                    log.info(
-                        "Adding cross-bot mention context to response",
-                        extra={
-                            "bot_id": self.get_bot_id(),
-                            "mentioning_source": mentioning_source,
-                            "context_added": cross_bot_context[:50],
-                        },
-                    )
-
-        if not cross_bot_context and topic_context:
-            # If no bot mentions but there's topic-based context, use that
-            cross_bot_context = topic_context
-            log.info(
-                "Adding cross-bot topic context to response",
-                extra={
-                    "bot_id": self.get_bot_id(),
-                    "topic_context": topic_context[:50],
-                },
-            )
+            if topic_context:
+                cross_bot_context = topic_context
+                log.info(
+                    "Adding cross-bot topic context to response",
+                    extra={
+                        "bot_id": self.get_bot_id(),
+                        "topic_context": topic_context[:50],
+                    },
+                )
 
         # Skip if the remaining content is too short or just punctuation
         if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):

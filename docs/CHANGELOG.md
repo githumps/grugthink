@@ -11,12 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🌙 Dark Mode & Cross-Bot Features
 - **Added** dark mode toggle for web interface with CSS custom properties and localStorage persistence
 - **Implemented** cross-bot shit-talking detection and response system with LRU cache tracking
+- **Improved** insults: bots now reply with a single short jab when another bot or user mentions them
+- **Changed** cross-bot insults are sent as a separate message instead of being appended
+- **Fixed** endless cross-bot fights by tracking pair responses with an LRU cache
+- **Fixed** cross-bot insult timing: insults now wait 2 seconds to allow main bot response to complete first
+- **Enhanced** cross-bot insults with 12 unique variations per personality type (caveman, British working class, adaptive) for more engaging interactions
+- **Enhanced** cross-bot knowledge sharing: bots now access each other's personality information, traits, and background for richer interactions
 - **Added** cross-bot memory sharing allowing bots in same channel to access each other's memories
 - **Enhanced** bot interaction dynamics with mention detection and one-time responses
 - **Fixed** cross-bot detection bugs: improved name variations, storage logic, and retrieval matching
 - **Added** topic-based cross-bot awareness: bots now track and reference what other bots say about shared topics
 - **Enhanced** cross-bot responses with automatic topic categorization (beer, food, fights, football, etc.)
 - **Fixed** critical message edit detection: bots now capture cross-bot mentions from edited responses
+- **Fixed** package import requiring Discord token; bot module now lazily loaded
+- **Changed** cross-bot topic context only added for human messages
 
 ### Bug Fixes and UI Improvements
 - **Fixed bot personality display**: Corrected interface showing "adaptive" instead of "grug" personality
