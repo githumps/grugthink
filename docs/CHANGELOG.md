@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2025-07-02
+
+### 🚀 Upgrade Information
+- **Smooth upgrade path** from v3.1.1 with automatic configuration migration
+- **Backward compatible** with existing bot personalities and learned memories
+- **Automatic migration** converts JSON+.env configuration to unified YAML
+- **Zero downtime** upgrade process with container rebuilds
+- **See UPGRADE_TO_3.3.0.md** for detailed upgrade instructions
+
 ### 🌙 Dark Mode & Cross-Bot Features
 - **Added** dark mode toggle for web interface with CSS custom properties and localStorage persistence
 - **Implemented** cross-bot shit-talking detection and response system with LRU cache tracking

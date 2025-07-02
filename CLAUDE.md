@@ -732,3 +732,22 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 **Result**: Bots have authentic knowledge about each other - Big Rob knows Grug is a caveman, Grug knows Big Rob has strong football opinions.
 
 **Key Learning**: Cross-bot interactions are dramatically improved when bots have access to each other's personality information, not just memories.
+
+### Release v3.3.0 Preparation (2025-07-02 Session)
+**Task**: Prepared production-ready release with smooth upgrade path from v3.1.1.
+
+**Release Management**: 
+- **Version Bumping**: Updated version from 3.0.0 to 3.3.0 in `__init__.py`
+- **CHANGELOG**: Moved unreleased features to v3.3.0 section with upgrade information
+- **Migration Support**: Verified existing automatic migration from JSON+.env to YAML
+- **Upgrade Guide**: Created comprehensive `UPGRADE_TO_3.3.0.md` with Docker and direct upgrade paths
+
+**Quality Assurance**:
+- **Test Coverage**: All 43 tests pass with no regressions
+- **Code Quality**: Linting and formatting pass cleanly
+- **Backward Compatibility**: Existing migration logic ensures smooth upgrades
+- **Documentation**: Complete upgrade documentation with troubleshooting and rollback procedures
+
+**Key Features**: Cross-bot interactions, enhanced insults, personality knowledge sharing, dark mode, improved UI.
+
+**Key Learning**: Proper release management requires comprehensive upgrade documentation, automated migration, and verified backward compatibility.

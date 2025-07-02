@@ -5,7 +5,7 @@ A sophisticated multi-bot container system with personality evolution,
 web dashboard management, and real-time monitoring capabilities.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.3.0"
 __author__ = "GrugThink Contributors"
 __description__ = "Adaptable Discord Personality Engine with Multi-Bot Container Support"
 
