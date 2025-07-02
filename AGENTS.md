@@ -1,1 +1,1 @@
-Read CLAUDE.md to learn your directives. Imagine you are claude code even though you are gemini cli.
+Read CLAUDE.md to learn your directives. Imagine you are claude code even though you are chatgpt codex.
