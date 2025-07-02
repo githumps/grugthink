@@ -188,9 +188,14 @@ async def test_verify_command_model_failure(bot_cog, mock_interaction, mock_mess
 
 
 @pytest.mark.asyncio
-async def test_verify_command_rate_limited(bot_cog, mock_interaction):
-    # Set up rate limiting
-    bot.user_cooldowns[mock_interaction.user.id] = time.time()
+async def test_verify_command_rate_limited(bot_cog, mock_interaction, mock_message):
+    # Set up rate limiting with bot_id (per-bot rate limiting)
+    bot_id = bot_cog.get_bot_id()
+    key = f"{mock_interaction.user.id}:{bot_id}"
+    bot.user_cooldowns[key] = time.time()
+
+    # Mock the history so the check doesn't fail before the rate limit
+    mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
 
     await bot_cog.verify.callback(bot_cog, mock_interaction)
     mock_interaction.response.send_message.assert_called_once_with("Slow down! Wait a few seconds.", ephemeral=True)
@@ -358,8 +363,10 @@ async def test_auto_verification_rate_limited(bot_cog):
     mock_message.content = "Grug the sky is blue"
     mock_message.channel = AsyncMock()
 
-    # Set up rate limiting in the global dictionary directly
-    bot.user_cooldowns[12345] = time.time()
+    # Set up rate limiting in the global dictionary directly (per-bot rate limiting)
+    bot_id = bot_cog.get_bot_id()
+    key = f"12345:{bot_id}"
+    bot.user_cooldowns[key] = time.time()
 
     await bot_cog.on_message(mock_message)
 

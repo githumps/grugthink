@@ -484,6 +484,14 @@ class GrugThinkBot(commands.Cog):
 
         # Check if bot name is mentioned in the message
         if self.is_bot_mentioned(message.content, bot_name):
+            if is_rate_limited(message.author.id, self.get_bot_id()):
+                if personality.response_style == "caveman":
+                    await message.channel.send("Grug need rest. Wait little.", delete_after=5)
+                elif personality.response_style == "british_working_class":
+                    await message.channel.send("slow down mate, too much carlin last nite, simple as", delete_after=5)
+                else:
+                    await message.channel.send("Please wait a moment.", delete_after=5)
+                return
             await self.handle_auto_verification(message, server_id, personality)
 
     def is_bot_mentioned(self, content: str, bot_name: str) -> bool:
@@ -528,17 +536,6 @@ class GrugThinkBot(commands.Cog):
                     "message_length": len(message.content),
                 },
             )
-
-        # Rate limiting check (per-bot to allow multiple bots to respond)
-        if is_rate_limited(message.author.id, self.get_bot_id()):
-            # Send a brief rate limit message
-            if personality.response_style == "caveman":
-                await message.channel.send("Grug need rest. Wait little.", delete_after=5)
-            elif personality.response_style == "british_working_class":
-                await message.channel.send("slow down mate, too much carlin last nite, simple as", delete_after=5)
-            else:
-                await message.channel.send("Please wait a moment.", delete_after=5)
-            return
 
         # Clean the message content for verification
         clean_content = clean_statement(message.content)

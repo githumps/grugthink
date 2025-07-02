@@ -86,6 +86,7 @@ class TestDiscordIntegration:
         mock_bot_instance = MagicMock()
         mock_bot_instance.personality_engine = mock_personality_engine
         mock_bot_instance.db = MagicMock()
+        mock_bot_instance.config = MagicMock(bot_id="test-bot")
 
         with (
             patch.dict("sys.modules", {"src.grugthink.config": mock_config, "src.grugthink.grug_db": MagicMock()}),
@@ -146,22 +147,37 @@ class TestDiscordIntegration:
                 "Grug learn: Grug love mammoth meat.", ephemeral=True
             )
 
+    @pytest.fixture(autouse=True)
+    def mock_user_cooldowns(self):
+        with patch("src.grugthink.bot.user_cooldowns", {}) as mock_cooldowns:
+            yield mock_cooldowns
+
     @pytest.mark.asyncio
-    async def test_rate_limiting_integration(self, bot_cog_integration, mock_interaction, mock_message):
+    async def test_rate_limiting_integration(
+        self, bot_cog_integration, mock_interaction, mock_message, mock_user_cooldowns
+    ):
         """Test rate limiting functionality."""
         import time
 
-        # Setup mock responses
+        # Configure bot_id on the mock
+        bot_cog_integration.bot_instance.config.bot_id = "test-bot"
+
+        # Setup mock responses - ensure message is not from bot and has content
+        mock_message.author.bot = False
+        mock_message.content = "Test message content"
         mock_interaction.channel.history.return_value.__aiter__.return_value = [mock_message]
 
-        with patch("src.grugthink.bot.user_cooldowns", {mock_interaction.user.id: time.time()}):
-            # Execute the command
-            await bot_cog_integration.verify.callback(bot_cog_integration, mock_interaction)
+        bot_id = bot_cog_integration.get_bot_id()
+        key = f"{mock_interaction.user.id}:{bot_id}"
 
-            # Should be rate limited
-            mock_interaction.response.send_message.assert_called_once_with(
-                "Slow down! Wait a few seconds.", ephemeral=True
-            )
+        # Set cooldown to a recent time (e.g., 4 seconds ago) to trigger rate limit
+        mock_user_cooldowns[key] = time.time() - 4
+
+        # Execute the command
+        await bot_cog_integration.verify.callback(bot_cog_integration, mock_interaction)
+
+        # Should be rate limited
+        mock_interaction.response.send_message.assert_called_once_with("Slow down! Wait a few seconds.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_untrusted_user_learn_integration(self, bot_cog_integration, mock_interaction):
