@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added** dark mode toggle for web interface with CSS custom properties and localStorage persistence
 - **Implemented** cross-bot shit-talking detection and response system with LRU cache tracking
 - **Improved** insults: bots now reply with a single short jab when another bot or user mentions them
+- **Changed** cross-bot insults are sent as a separate message instead of being appended
 - **Added** cross-bot memory sharing allowing bots in same channel to access each other's memories
 - **Enhanced** bot interaction dynamics with mention detection and one-time responses
 - **Fixed** cross-bot detection bugs: improved name variations, storage logic, and retrieval matching

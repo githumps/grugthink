@@ -2088,3 +2088,13 @@ Implemented refined cross-bot insult logic so bots respond with a single jab whe
 - Updated `handle_auto_verification` to append short insults once per mention.
 - Updated changelog with new feature description.
 - Ensured lint and tests all pass (43 passed, 1 skipped).
+
+## Session: 2025-07-04 - Separate Insult Messages
+
+### Overview
+Fixed cross-bot insult logic so bots send their jab as its own message rather than appending it to responses.
+
+### Changes Made ✅
+- Simplified `handle_auto_verification` and moved insult handling to `on_message`.
+- Bots now detect when other bots mention them and reply once with a short insult message.
+- Changelog updated to document the behavioral change.

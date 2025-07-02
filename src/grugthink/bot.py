@@ -571,40 +571,48 @@ class GrugThinkBot(commands.Cog):
     async def on_message(self, message):
         """Handle incoming messages and detect name mentions for auto-verification."""
         # Ignore messages from bots, except for Markov bots and other GrugThink bots
+        is_markov_bot = False
         if message.author.bot:
-            # Allow interaction with Markov bots
             is_markov_bot = "markov" in message.author.name.lower()
-            # Allow interaction with other GrugThink bots (check if message mentions this bot)
-            is_mentioning_this_bot = self.client.user and (
-                f"<@{self.client.user.id}>" in message.content or f"<@!{self.client.user.id}>" in message.content
-            )
-            # Allow if it's a Markov bot, or if another bot is mentioning this specific bot
-            if not (is_markov_bot or is_mentioning_this_bot):
-                return
-
-        # Process commands first
-        await self.client.process_commands(message)
 
         # Get personality for this server
         server_id = str(message.guild.id) if message.guild else "dm"
         personality = self.personality_engine.get_personality(server_id)
         bot_name = personality.chosen_name or personality.name
 
-        # Check for cross-bot mentions in ANY message (bot or human) and store them
-        # This allows us to track when any message mentions other bots
+        # Detect and store cross-bot mentions from all messages
         mentioned_bots = self.detect_cross_bot_mentions(message)
         if mentioned_bots:
             message_author = message.author.display_name or message.author.name
-
-            # Store the mention with proper attribution
             if message.author.bot:
-                # If it's a bot message, use the bot name as the mentioning entity
                 self.store_cross_bot_mention(message_author, mentioned_bots, message)
             else:
-                # If it's a human message, store it as a general mention
                 self.store_cross_bot_mention(f"user:{message_author}", mentioned_bots, message)
 
-        # Check if bot name is mentioned in the message
+        # If another bot explicitly talks about this bot, fire back with a short insult once
+        if (
+            message.author.bot
+            and self.is_bot_mentioned(message.content, bot_name)
+            and message.author != self.client.user
+            and not is_markov_bot
+        ):
+            response_key = f"{server_id}:{message.id}:{self.get_bot_id()}"
+            if response_key not in cross_bot_responses:
+                cross_bot_responses[response_key] = time.time()
+                insult = generate_shit_talk(
+                    message.author.display_name or message.author.name,
+                    personality.response_style,
+                )
+                await message.channel.send(insult)
+            return
+
+        if message.author.bot and not is_markov_bot:
+            # Ignore other bot messages that don't mention us
+            return
+        # Process commands first
+        await self.client.process_commands(message)
+
+        # Check if bot name is mentioned in the message by a human
         if self.is_bot_mentioned(message.content, bot_name):
             if is_rate_limited(message.author.id, self.get_bot_id()):
                 if personality.response_style == "caveman":
@@ -922,56 +930,13 @@ class GrugThinkBot(commands.Cog):
         # Clean up extra whitespace
         clean_content = re.sub(r"\s+", " ", clean_content).strip()
 
-        # Check for recent mentions about this bot and prepare cross-bot response
-        channel_id = str(message.channel.id)
-        recent_mentions = self.get_recent_mentions_about_bot(bot_name, server_id, channel_id)
+        # Prepare contextual info from other bots
         cross_bot_context = ""
 
-        # Also check for topic-based cross-bot responses
+        # Include recent topic-based chatter from other bots
         topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
 
-        if recent_mentions:
-            # Only process mentions from other BOTS, not users
-            bot_mentions = [m for m in recent_mentions if not m.get("mentioning_bot", "").startswith("user:")]
-
-            if bot_mentions:
-                latest_mention = bot_mentions[0]
-                mentioning_source = latest_mention.get("mentioning_bot", "another bot")
-                mention_content = latest_mention.get("message_content", "")
-
-                # Create a unique key to track if we've already responded to this cross-reference
-                response_key = f"{server_id}:{channel_id}:{latest_mention.get('message_id')}:{self.get_bot_id()}"
-
-                if response_key not in cross_bot_responses:
-                    cross_bot_responses[response_key] = time.time()
-
-                    if personality.response_style == "caveman":
-                        insult = generate_shit_talk(mentioning_source, "caveman")
-                        cross_bot_context = (
-                            f" Grug hear {mentioning_source} say about Grug: '{mention_content[:80]}'." + insult
-                        )
-                    elif personality.response_style == "british_working_class":
-                        insult = generate_shit_talk(mentioning_source, "british_working_class")
-                        cross_bot_context = (
-                            f" Heard {mentioning_source} been chattin bout me: '{mention_content[:80]}' -" + insult
-                        )
-                    else:
-                        insult = generate_shit_talk(mentioning_source, "other")
-                        cross_bot_context = (
-                            f" I noticed {mentioning_source} mentioned me: '{mention_content[:80]}'." + insult
-                        )
-
-                    log.info(
-                        "Adding cross-bot mention context to response",
-                        extra={
-                            "bot_id": self.get_bot_id(),
-                            "mentioning_source": mentioning_source,
-                            "context_added": cross_bot_context[:50],
-                        },
-                    )
-
-        if not cross_bot_context and topic_context:
-            # If no bot mentions but there's topic-based context, use that
+        if topic_context:
             cross_bot_context = topic_context
             log.info(
                 "Adding cross-bot topic context to response",

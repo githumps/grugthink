@@ -670,6 +670,13 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 ### Cross-Bot Insults (2025-07-03 Session)
 **Problem**: Bots saw mentions from others but rarely responded with playful jabs.
 
-**Solution**: Added `generate_shit_talk()` helper in `bot.py` and appended results in `handle_auto_verification`. Bots now issue one short insult when another bot talks about them.
+**Solution**: Added `generate_shit_talk()` helper in `bot.py` and initially appended results in `handle_auto_verification`. Bots issued a short insult when another bot talked about them.
 
 **Key Learning**: Maintain per-mention response tracking to keep conversations civil while letting personalities shine.
+
+### Separate Insult Messages (2025-07-04 Session)
+**Problem**: Appending insults to verification messages made replies awkward.
+
+**Solution**: Moved insult handling to `on_message` so bots send their jab as its own message once per mention.
+
+**Key Learning**: Decoupling insult logic from verification keeps conversation flow natural and prevents quoting the previous bot.
