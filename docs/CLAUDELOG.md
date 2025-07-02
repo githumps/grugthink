@@ -2109,3 +2109,15 @@ Improved cross-bot insult handling so bots trade only one jab each after a human
 - Introduced `_pair_key` helper and LRU cache to track bot pairs
 - Updated `on_message` logic to mark responses per pair
 - Changelog entry noting fix for infinite insult loops
+
+## Session: 2025-07-06 - Lazy Bot Import and Topic Context Tweak
+
+### Overview
+Addressed startup failure when `DISCORD_TOKEN` was missing and reduced cross-bot
+quote spam.
+
+### Changes Made ✅
+- Removed eager import of `bot` in `__init__`; added `__getattr__` for lazy load
+  so package can import without environment variables.
+- Limited cross-bot topic context to human messages without other bot mentions.
+- Updated changelog with the fixes.

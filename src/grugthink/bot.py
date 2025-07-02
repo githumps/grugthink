@@ -637,7 +637,7 @@ class GrugThinkBot(commands.Cog):
                 else:
                     await message.channel.send("Please wait a moment.", delete_after=5)
                 return
-            await self.handle_auto_verification(message, server_id, personality)
+            await self.handle_auto_verification(message, server_id, personality, mentioned_bots)
 
     def is_bot_mentioned(self, content: str, bot_name: str) -> bool:
         """Check if the bot name is mentioned in the message content."""
@@ -904,7 +904,7 @@ class GrugThinkBot(commands.Cog):
 
         return list(set(mentioned_bots))  # Remove duplicates
 
-    async def handle_auto_verification(self, message, server_id: str, personality):
+    async def handle_auto_verification(self, message, server_id: str, personality, mentioned_bots=None):
         """Handle automatic verification when bot name is mentioned."""
         # Log if this is a bot interaction
         is_markov_bot = message.author.bot and "markov" in message.author.name.lower()
@@ -945,21 +945,23 @@ class GrugThinkBot(commands.Cog):
         # Clean up extra whitespace
         clean_content = re.sub(r"\s+", " ", clean_content).strip()
 
-        # Prepare contextual info from other bots
+        # Prepare contextual info from other bots (only for human messages that
+        # don't mention other bots)
         cross_bot_context = ""
+        mentioned_bots = mentioned_bots or []
 
-        # Include recent topic-based chatter from other bots
-        topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
+        if not message.author.bot and not mentioned_bots:
+            topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
 
-        if topic_context:
-            cross_bot_context = topic_context
-            log.info(
-                "Adding cross-bot topic context to response",
-                extra={
-                    "bot_id": self.get_bot_id(),
-                    "topic_context": topic_context[:50],
-                },
-            )
+            if topic_context:
+                cross_bot_context = topic_context
+                log.info(
+                    "Adding cross-bot topic context to response",
+                    extra={
+                        "bot_id": self.get_bot_id(),
+                        "topic_context": topic_context[:50],
+                    },
+                )
 
         # Skip if the remaining content is too short or just punctuation
         if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):

@@ -10,7 +10,6 @@ __author__ = "GrugThink Contributors"
 __description__ = "Adaptable Discord Personality Engine with Multi-Bot Container Support"
 
 # Multi-bot system - core modules always available
-from . import bot
 from .bot_manager import BotConfig, BotInstance, BotManager
 from .config_manager import ConfigManager, ConfigTemplate
 from .grug_db import GrugDB
@@ -37,9 +36,18 @@ __all__ = [
     "BotInstance",
     "ConfigManager",
     "ConfigTemplate",
-    "bot",
 ]
 
 # Only export APIServer if available
 if _API_SERVER_AVAILABLE:
     __all__.append("APIServer")
+
+
+def __getattr__(name: str):
+    """Lazy import optional submodules."""
+    if name == "bot":
+        import importlib
+
+        _bot = importlib.import_module(".bot", __name__)
+        return _bot
+    raise AttributeError(name)

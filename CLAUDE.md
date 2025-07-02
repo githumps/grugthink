@@ -688,3 +688,10 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 **Solution**: Introduced `_pair_key` and an LRU cache to track when each bot has already insulted the other. `on_message` now checks this cache so each bot fires back only once per pair.
 
 **Key Learning**: Track per-pair insult state to keep conversations short and prevent runaway back-and-forth.
+
+### Lazy Bot Import & Topic Context (2025-07-06 Session)
+**Problem**: Importing the package raised `Missing DISCORD_TOKEN`, and bots were quoting each other when humans mentioned them.
+
+**Solution**: Added a lazy `__getattr__` loader for the `bot` module and limited topic-based cross-bot context to human statements without other bot names.
+
+**Key Learning**: Load optional modules lazily to avoid unnecessary configuration requirements and keep bot replies focused.

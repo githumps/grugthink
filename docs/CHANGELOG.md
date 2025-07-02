@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added** topic-based cross-bot awareness: bots now track and reference what other bots say about shared topics
 - **Enhanced** cross-bot responses with automatic topic categorization (beer, food, fights, football, etc.)
 - **Fixed** critical message edit detection: bots now capture cross-bot mentions from edited responses
+- **Fixed** package import requiring Discord token; bot module now lazily loaded
+- **Changed** cross-bot topic context only added for human messages
 
 ### Bug Fixes and UI Improvements
 - **Fixed bot personality display**: Corrected interface showing "adaptive" instead of "grug" personality
