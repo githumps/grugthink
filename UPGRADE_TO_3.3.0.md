@@ -207,6 +207,30 @@ If you encounter issues during upgrade:
 3. **Consult the documentation** in the repository
 4. **File an issue** with detailed error information
 
+## 🏷️ Creating the Release Tag
+
+For maintainers creating the v3.3.0 release:
+
+```bash
+# Create the release tag
+git tag -a v3.3.0 -m "Release v3.3.0: Enhanced Cross-Bot Interactions
+
+Major Features:
+- Cross-bot personality-aware conversations  
+- Enhanced insult system with 12 variations per personality
+- Cross-bot knowledge sharing with rich context
+- Dark mode for web interface
+- Improved UI and bot management
+
+Breaking Changes:
+- Configuration migrated from JSON+.env to YAML (automatic migration included)
+
+Upgrade from v3.1.1: See UPGRADE_TO_3.3.0.md for instructions"
+
+# Push the tag
+git push origin v3.3.0
+```
+
 ## 🎉 Enjoy v3.3.0!
 
 Your bots can now:
