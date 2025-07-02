@@ -2219,3 +2219,28 @@ quote spam.
   so package can import without environment variables.
 - Limited cross-bot topic context to human messages without other bot mentions.
 - Updated changelog with the fixes.
+
+## Session: 2025-07-07 - Per-Bot Caching & Log Detail Fix
+
+### Overview
+Bots were repeating each other's responses due to a global cache. The web dashboard logs also dropped structured details.
+
+### Changes Made ✅
+- Cache keys now include the `bot_id` so each bot caches separately.
+- `InMemoryLogHandler` stores the full structured log entry instead of only the message.
+- Dashboard `renderBotLogs` shows all extra log fields in a formatted block.
+- Added unit test ensuring cache keys differ per bot.
+- Changelog updated with these fixes.
+
+## Session: 2025-07-08 - Dark Mode Polish & Personality Editing
+
+### Overview
+UI readability issues persisted in dark mode and personality YAMLs were not editable from the dashboard.
+
+### Changes Made ✅
+- Refined dashboard CSS for dark mode, including sidebar, logs and tables.
+- Log modals now use theme colors and support additional fields.
+- Template editor now loads personality YAML for editing and saves updates back to the server.
+- Added js-yaml dependency in the dashboard.
+- New unit test verifies `save_personality_to_file` writes YAML correctly.
+- Changelog updated with the improvements.

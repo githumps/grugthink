@@ -374,6 +374,18 @@ class GrugThinkDashboard {
             const response = await this.apiCall(`/templates/${templateId}`);
             const template = response.template;
             this.showTemplateEditModal(templateId, template);
+
+            const personalityId = template.personality || template.force_personality;
+            if (personalityId) {
+                try {
+                    const pres = await this.apiCall(`/personalities/${personalityId}`);
+                    const yamlText = jsyaml.dump(pres.personality || {});
+                    document.getElementById('edit-personality-yaml').value = yamlText;
+                    document.getElementById('edit-personality-yaml').setAttribute('data-personality-id', personalityId);
+                } catch (err) {
+                    console.error('Failed to load personality', err);
+                }
+            }
         } catch (error) {
             console.error('Failed to load template:', error);
             this.showAlert('Failed to load template for editing', 'danger');
@@ -494,6 +506,13 @@ class GrugThinkDashboard {
                                     </select>
                                     <div class="form-text">Controls verbosity of bot logging</div>
                                 </div>
+
+                                <!-- Personality YAML -->
+                                <h6 class="text-primary mb-3 mt-4">Personality YAML</h6>
+                                <div class="mb-3">
+                                    <textarea class="form-control font-monospace" id="edit-personality-yaml" rows="10"></textarea>
+                                    <div class="form-text">Edit full personality definition</div>
+                                </div>
                             </form>
                         </div>
                         <div class="modal-footer">
@@ -552,8 +571,28 @@ class GrugThinkDashboard {
             log_level: document.getElementById('edit-template-log-level').value,
             custom_env: customEnv
         };
+
+        // Parse personality YAML and save
+        const personalityField = document.getElementById('edit-personality-yaml');
+        const personalityId = personalityField.getAttribute('data-personality-id');
+        let personalityData = {};
+        if (personalityField.value.trim()) {
+            try {
+                personalityData = jsyaml.load(personalityField.value);
+            } catch (err) {
+                this.showAlert('Invalid YAML in Personality definition', 'danger');
+                return;
+            }
+        }
         
         try {
+            if (personalityId && Object.keys(personalityData).length > 0) {
+                await this.apiCall(`/personalities/${personalityId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(personalityData)
+                });
+            }
+
             await this.apiCall(`/templates/${templateId}`, {
                 method: 'PUT',
                 body: JSON.stringify(templateData)
@@ -819,7 +858,7 @@ class GrugThinkDashboard {
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
-                            <div id="botLogsContainer" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 5px;"></div>
+                            <div id="botLogsContainer" style="max-height: 400px; overflow-y: auto; background: var(--bg-secondary); padding: 15px; border-radius: 5px;"></div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -854,8 +893,14 @@ class GrugThinkDashboard {
             return;
         }
         
-        container.innerHTML = logs.map(log => `
-            <div class="log-entry log-${log.level} mb-2 p-2" style="border-left: 3px solid ${this.getLogColor(log.level)}; background: white;">
+        container.innerHTML = logs.map(log => {
+            const extraDetails = Object.entries(log)
+                .filter(([k]) => !['level', 'message', 'timestamp', 'logger'].includes(k))
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('<br>');
+
+            return `
+            <div class="log-entry log-${log.level} mb-2 p-2" style="border-left: 3px solid ${this.getLogColor(log.level)}; background: var(--card-bg);">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <span class="badge bg-${this.getLogBadgeColor(log.level)} me-2">${log.level.toUpperCase()}</span>
@@ -863,9 +908,10 @@ class GrugThinkDashboard {
                     </div>
                 </div>
                 <div class="mt-1">${log.message}</div>
+                ${extraDetails ? `<pre class="p-2 mt-1 small" style="background: var(--bg-tertiary);">${extraDetails}</pre>` : ''}
                 ${log.logger ? `<small class="text-muted">Logger: ${log.logger}</small>` : ''}
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
         
         // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;

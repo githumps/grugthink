@@ -360,3 +360,14 @@ main.col-md-9.ms-sm-auto.col-lg-10 {
 [data-theme="dark"] .navbar-nav .nav-link {
     color: var(--text-primary) !important;
 }
+
+/* Additional dark mode tweaks */
+[data-theme="dark"] .log-entry {
+    background-color: var(--bg-secondary);
+}
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+[data-theme="dark"] .sidebar {
+    background-color: var(--sidebar-bg);
+}

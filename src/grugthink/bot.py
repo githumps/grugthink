@@ -319,8 +319,10 @@ def clean_statement(text: str) -> str:
     return text.strip()
 
 
-def get_cache_key(statement: str) -> str:
-    return hashlib.md5(statement.encode()).hexdigest()
+def get_cache_key(statement: str, bot_id: str | None = None) -> str:
+    """Return a cache key unique to the statement and bot."""
+    key_source = f"{bot_id}:{statement}" if bot_id else statement
+    return hashlib.md5(key_source.encode()).hexdigest()
 
 
 def is_rate_limited(user_id: int, bot_id: str = None) -> bool:
@@ -566,7 +568,7 @@ def query_model(
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
 
-    cache_key = get_cache_key(statement)
+    cache_key = get_cache_key(statement, current_bot_id)
     cached_response = response_cache.get(cache_key)
     if cached_response:
         log.info("Using cached response", extra={"cache_key": cache_key})

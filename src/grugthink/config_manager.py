@@ -430,6 +430,7 @@ class ConfigManager:
         personalities = self.get_config("personalities") or {}
         personalities[personality_id] = personality_config
         self.set_config("personalities", personalities)
+        self.save_personality_to_file(personality_id, personality_config)
         log.info("Added personality", extra={"personality_id": personality_id})
         return True
 
@@ -439,9 +440,28 @@ class ConfigManager:
         if personality_id in personalities:
             personalities[personality_id].update(updates)
             self.set_config("personalities", personalities)
+            self.save_personality_to_file(personality_id, personalities[personality_id])
             log.info("Updated personality", extra={"personality_id": personality_id})
             return True
         return False
+
+    def save_personality_to_file(self, personality_id: str, data: Dict[str, Any]) -> bool:
+        """Persist personality YAML in the personalities directory."""
+        if not _YAML_AVAILABLE:
+            log.warning("PyYAML not available; cannot save personality file", extra={"personality_id": personality_id})
+            return False
+
+        os.makedirs("personalities", exist_ok=True)
+        file_path = os.path.join("personalities", f"{personality_id}.yaml")
+
+        try:
+            with open(file_path, "w") as f:
+                yaml.safe_dump(data, f, indent=2, default_flow_style=False)
+            log.debug("Saved personality file", extra={"personality_id": personality_id, "file": file_path})
+            return True
+        except Exception as e:
+            log.error("Failed to save personality file", extra={"personality_id": personality_id, "error": str(e)})
+            return False
 
     def remove_personality(self, personality_id: str) -> bool:
         """Remove a personality configuration."""

@@ -55,18 +55,22 @@ class InMemoryLogHandler(logging.Handler):
 
         # Extract message and other data
         if structured_data and isinstance(structured_data, dict):
+            log_entry = structured_data
             actual_message = structured_data.get("message", message)
             bot_id = structured_data.get("bot_id")
         else:
+            log_entry = {"message": message}
             actual_message = message
             bot_id = None
 
-        log_entry = {
-            "level": record.levelname.lower(),
-            "message": actual_message,
-            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
-            "logger": record.name,
-        }
+        log_entry.update(
+            {
+                "level": record.levelname.lower(),
+                "message": actual_message,
+                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                "logger": record.name,
+            }
+        )
 
         # Extract bot_id from various sources
         if bot_id:

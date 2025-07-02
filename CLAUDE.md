@@ -751,3 +751,17 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 **Key Features**: Cross-bot interactions, enhanced insults, personality knowledge sharing, dark mode, improved UI.
 
 **Key Learning**: Proper release management requires comprehensive upgrade documentation, automated migration, and verified backward compatibility.
+
+### Per-Bot Cache & Logging Fix (2025-07-07 Session)
+**Problem**: Bots sometimes repeated each other's responses because the cache key ignored bot identity. Web dashboard logs also lost structured details.
+
+**Solution**: Added `bot_id` to the response cache key and modified the in-memory log handler and frontend to show full structured log entries.
+
+**Key Learning**: Always scope caches to the relevant bot/personality and preserve log context for debugging.
+
+### Dark Mode Polish & Personality Editing (2025-07-08 Session)
+**Problem**: Some dashboard sections were unreadable in dark mode and personality YAML could not be edited.
+
+**Solution**: Refined CSS for dark mode, added js-yaml on the frontend, and exposed personality YAML editing in the template modal.
+
+**Key Learning**: Ensure theme variables cover all UI elements and expose raw configuration for advanced customization.

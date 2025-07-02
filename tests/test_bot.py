@@ -454,3 +454,9 @@ def test_clean_statement():
     # Test whitespace normalization
     result = bot.clean_statement("Too    much     space")
     assert result == "Too much space"
+
+
+def test_get_cache_key_unique_per_bot():
+    key1 = bot.get_cache_key("same statement", "bot1")
+    key2 = bot.get_cache_key("same statement", "bot2")
+    assert key1 != key2
