@@ -60,17 +60,17 @@ bot_templates:
   pure_grug:
     name: "Pure Grug"
     description: "Caveman personality only, no evolution"
-    force_personality: "grug"
+    personality: "grug"
     load_embedder: true
     default_gemini_key: true
-    default_google_search: false
+    default_google_search: true
     default_ollama: false
     custom_env: {}
   
   pure_big_rob:
     name: "Pure Big Rob"
     description: "norf FC lad personality only, no evolution"
-    force_personality: "big_rob"
+    personality: "big_rob"
     load_embedder: true
     default_gemini_key: true
     default_google_search: false
@@ -80,7 +80,7 @@ bot_templates:
   evolution_bot:
     name: "Evolution Bot"
     description: "Adaptive personality that evolves per server"
-    force_personality: null
+    personality: "adaptive"
     load_embedder: true
     default_gemini_key: true
     default_google_search: false
@@ -90,7 +90,7 @@ bot_templates:
   lightweight_grug:
     name: "Lightweight Grug"
     description: "Grug personality without semantic search"
-    force_personality: "grug"
+    personality: "grug"
     load_embedder: false
     default_gemini_key: true
     default_google_search: false
@@ -100,7 +100,7 @@ bot_templates:
   ollama_bot:
     name: "Ollama Bot"
     description: "Uses local Ollama instead of Gemini"
-    force_personality: null
+    personality: "adaptive"
     load_embedder: true
     default_gemini_key: false
     default_ollama: true
@@ -115,9 +115,14 @@ bot_configs:
     name: "Example Grug Bot"
     discord_token_id: '1'  # References token ID above
     template_id: pure_grug
-    force_personality: grug
+    personality: grug
     load_embedder: true
     log_level: INFO
     data_dir: "./data"
     status: stopped
+    auto_start: true
     created_at: 1751237609.9030309
+
+# Personalities are now loaded from personalities/ directory
+# Each personality is defined in its own YAML file (e.g., personalities/grug.yaml)
+# Available personalities: grug, big_rob, adaptive

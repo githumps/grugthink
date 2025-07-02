@@ -8,6 +8,7 @@ class GrugThinkDashboard {
         this.templates = {};
         this.tokens = [];
         
+        this.initTheme();
         this.initWebSocket();
         this.bindEvents();
         this.loadInitialData();
@@ -950,6 +951,36 @@ class GrugThinkDashboard {
                 alert.parentNode.removeChild(alert);
             }
         }, 5000);
+    }
+
+    // Dark mode theme management
+    initTheme() {
+        // Check for saved theme preference or default to light mode
+        const savedTheme = localStorage.getItem('grugthink-theme') || 'light';
+        this.setTheme(savedTheme);
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+    }
+
+    setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('grugthink-theme', theme);
+        
+        // Update theme toggle button
+        const themeIcon = document.getElementById('theme-icon');
+        const themeText = document.getElementById('theme-text');
+        
+        if (theme === 'dark') {
+            themeIcon.className = 'bi bi-sun-fill';
+            themeText.textContent = 'Light';
+        } else {
+            themeIcon.className = 'bi bi-moon-fill';
+            themeText.textContent = 'Dark';
+        }
     }
 }
 

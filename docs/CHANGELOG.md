@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🌙 Dark Mode & Cross-Bot Features
+- **Added** dark mode toggle for web interface with CSS custom properties and localStorage persistence
+- **Implemented** cross-bot shit-talking detection and response system with LRU cache tracking
+- **Added** cross-bot memory sharing allowing bots in same channel to access each other's memories
+- **Enhanced** bot interaction dynamics with mention detection and one-time responses
+- **Fixed** cross-bot detection bugs: improved name variations, storage logic, and retrieval matching
+- **Added** topic-based cross-bot awareness: bots now track and reference what other bots say about shared topics
+- **Enhanced** cross-bot responses with automatic topic categorization (beer, food, fights, football, etc.)
+- **Fixed** critical message edit detection: bots now capture cross-bot mentions from edited responses
+
 ### Bug Fixes and UI Improvements
 - **Fixed bot personality display**: Corrected interface showing "adaptive" instead of "grug" personality
 - **Enhanced template management**: Added comprehensive CRUD API for bot templates with full frontend support

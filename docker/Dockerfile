@@ -21,6 +21,7 @@ COPY src/ src/
 COPY grugthink.py .
 COPY pyproject.toml ./
 COPY docker/web/ web/
+COPY docker/personalities/ personalities/
 COPY docker/init-config.sh /usr/local/bin/init-config.sh
 
 # Create directories for data

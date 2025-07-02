@@ -157,6 +157,14 @@ class ConfigManager:
                     else:
                         data = json.load(f)
 
+                # Load external personalities from personalities directory
+                external_personalities = self._load_external_personalities()
+                if external_personalities:
+                    # Merge external personalities with inline ones, external take precedence
+                    inline_personalities = data.get("personalities", {})
+                    data["personalities"] = {**inline_personalities, **external_personalities}
+                    log.info("Loaded external personalities", extra={"count": len(external_personalities)})
+
                 with self._lock:
                     self.config_data = data
                     self.env_vars = data.get("environment", {})
@@ -171,6 +179,40 @@ class ConfigManager:
         except Exception as e:
             log.error("Failed to load configuration", extra={"error": str(e), "config_file": self.config_file})
             self._create_default_config()
+
+    def _load_external_personalities(self) -> Dict[str, Any]:
+        """Load personality configurations from personalities directory."""
+        personalities = {}
+        personalities_dir = "personalities"
+
+        if not os.path.exists(personalities_dir):
+            log.debug("Personalities directory not found", extra={"dir": personalities_dir})
+            return personalities
+
+        try:
+            for filename in os.listdir(personalities_dir):
+                if filename.endswith((".yaml", ".yml")):
+                    personality_id = filename.replace(".yaml", "").replace(".yml", "")
+                    file_path = os.path.join(personalities_dir, filename)
+
+                    try:
+                        with open(file_path, "r") as f:
+                            if _YAML_AVAILABLE:
+                                personality_data = yaml.safe_load(f)
+                                if personality_data:
+                                    personalities[personality_id] = personality_data
+                                    log.debug("Loaded personality", extra={"id": personality_id, "file": file_path})
+                            else:
+                                log.warning(
+                                    "YAML personality file found but PyYAML not available", extra={"file": file_path}
+                                )
+                    except Exception as e:
+                        log.error("Failed to load personality file", extra={"file": file_path, "error": str(e)})
+
+        except Exception as e:
+            log.error("Failed to scan personalities directory", extra={"error": str(e), "dir": personalities_dir})
+
+        return personalities
 
     def _create_default_config(self):
         """Create default configuration file."""

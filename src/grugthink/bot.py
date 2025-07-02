@@ -63,6 +63,11 @@ class LRUCache:
 response_cache = LRUCache(max_size=100, ttl_seconds=300)
 user_cooldowns = {}
 
+# Cross-bot interaction tracking
+cross_bot_mentions = LRUCache(max_size=200, ttl_seconds=600)  # Track mentions for 10 minutes
+cross_bot_responses = {}  # Track if bots have already responded to each other
+cross_bot_topic_responses = LRUCache(max_size=100, ttl_seconds=1800)  # Store bot responses by topic for 30 minutes
+
 # Initialize Server Manager and Personality Engine
 server_manager = GrugServerManager(config.DB_PATH)
 
@@ -81,6 +86,43 @@ def get_personality_engine():
 def _reset_personality_engine():
     global _personality_engine_instance
     _personality_engine_instance = None
+
+
+def store_bot_response_for_cross_reference(response: str, personality_name: str):
+    """Store bot response for other bots to reference when topics are mentioned."""
+    if not personality_name or not response:
+        return
+
+    # Extract key topics/keywords from the response
+    response_lower = response.lower()
+    topics = []
+
+    # Common topics that bots might argue about
+    topic_keywords = {
+        "carling": ["carling", "beer", "drink", "pint"],
+        "beer": ["beer", "carling", "drink", "pint", "ale"],
+        "food": ["pie", "potato", "shepherd", "meat", "food", "grub"],
+        "pie": ["pie", "potato", "shepherd", "meat", "food"],
+        "fight": ["fight", "beat", "strong", "tough", "battle"],
+        "football": ["football", "footy", "norf", "fc", "team"],
+        "caveman": ["caveman", "mammoth", "cave", "stone", "hunt"],
+    }
+
+    # Check which topics this response relates to
+    for topic, keywords in topic_keywords.items():
+        if any(keyword in response_lower for keyword in keywords):
+            topics.append(topic)
+
+    # Store the response under each relevant topic
+    for topic in topics:
+        topic_key = f"{topic}:{personality_name.lower()}"
+        topic_data = {"bot_name": personality_name, "response": response, "timestamp": time.time(), "topic": topic}
+        cross_bot_topic_responses.put(topic_key, topic_data)
+
+        log.info(
+            "Stored bot response for cross-reference",
+            extra={"bot_name": personality_name, "topic": topic, "response": response[:100]},
+        )
 
 
 def get_server_db(interaction_or_guild_id):
@@ -303,7 +345,48 @@ def search_google(query: str) -> str:
     return ""
 
 
-def query_model(statement: str, server_db, server_id: str, personality_engine) -> str | None:
+def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str = None) -> str:
+    """Get memories from other bots in the same server for context."""
+    try:
+        # Import here to avoid circular imports
+
+        # Try to access other bot databases if available
+        # This will only work in multi-bot mode where we can access the bot manager
+        cross_bot_context = ""
+
+        # For now, we'll implement a simple system that looks for other bot data directories
+        # In a more advanced implementation, this could access the BotManager directly
+        data_base_dir = (
+            os.path.dirname(server_manager.base_db_path) if hasattr(server_manager, "base_db_path") else "./data"
+        )
+
+        if os.path.exists(data_base_dir):
+            for bot_dir in os.listdir(data_base_dir):
+                bot_data_path = os.path.join(data_base_dir, bot_dir)
+                if os.path.isdir(bot_data_path) and bot_dir != current_bot_id:
+                    facts_db_path = os.path.join(bot_data_path, "facts.db")
+                    if os.path.exists(facts_db_path):
+                        try:
+                            # Create a temporary server manager to access other bot's memories
+                            temp_manager = GrugServerManager(facts_db_path)
+                            temp_db = temp_manager.get_server_db(server_id)
+                            relevant_facts = temp_db.search_facts(statement, k=2)
+                            if relevant_facts:
+                                cross_bot_context += f" {bot_dir} remembers: {' '.join(relevant_facts[:2])}"
+                        except Exception as e:
+                            log.debug(
+                                "Could not access cross-bot memories", extra={"bot_dir": bot_dir, "error": str(e)}
+                            )
+
+        return cross_bot_context.strip()
+    except Exception as e:
+        log.debug("Cross-bot memory access failed", extra={"error": str(e)})
+        return ""
+
+
+def query_model(
+    statement: str, server_db, server_id: str, personality_engine, current_bot_id: str = None
+) -> str | None:
     """Unified query function for both Ollama and Gemini."""
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
@@ -321,11 +404,22 @@ def query_model(statement: str, server_db, server_id: str, personality_engine) -
     # Check internal knowledge first from this server's database
     relevant_lore = server_db.search_facts(clean_stmt, k=1)
     external_info = ""
+    cross_bot_memories = ""
+
+    # Get memories from other bots in the same server
+    if current_bot_id:
+        cross_bot_memories = get_cross_bot_memories(clean_stmt, server_id, current_bot_id)
+
     if not relevant_lore:  # If no strong internal signal, search web
         log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
         external_info = search_google(clean_stmt)
 
-    prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, personality_engine, external_info)
+    # Combine external info with cross-bot memories
+    combined_external_info = external_info
+    if cross_bot_memories:
+        combined_external_info += f" Other bots know: {cross_bot_memories}"
+
+    prompt_text = build_personality_prompt(clean_stmt, server_db, server_id, personality_engine, combined_external_info)
 
     # Track personality evolution
     personality_engine.evolve_personality(server_id, clean_stmt)
@@ -403,6 +497,10 @@ def validate_and_process_response(
                     response_cache.put(cache_key, full_response)
                     if server_db:
                         extract_lore_from_response(full_response, server_db, personality_name)
+
+                    # Store bot response for cross-bot awareness
+                    store_bot_response_for_cross_reference(full_response, personality_name)
+
                     log.info("Validated response", extra={"response": full_response[:200]})
                     return full_response
     log.warning("Invalid format, discarding", extra={"response": response[:200]})
@@ -482,6 +580,20 @@ class GrugThinkBot(commands.Cog):
         personality = self.personality_engine.get_personality(server_id)
         bot_name = personality.chosen_name or personality.name
 
+        # Check for cross-bot mentions in ANY message (bot or human) and store them
+        # This allows us to track when any message mentions other bots
+        mentioned_bots = self.detect_cross_bot_mentions(message)
+        if mentioned_bots:
+            message_author = message.author.display_name or message.author.name
+
+            # Store the mention with proper attribution
+            if message.author.bot:
+                # If it's a bot message, use the bot name as the mentioning entity
+                self.store_cross_bot_mention(message_author, mentioned_bots, message)
+            else:
+                # If it's a human message, store it as a general mention
+                self.store_cross_bot_mention(f"user:{message_author}", mentioned_bots, message)
+
         # Check if bot name is mentioned in the message
         if self.is_bot_mentioned(message.content, bot_name):
             if is_rate_limited(message.author.id, self.get_bot_id()):
@@ -510,6 +622,254 @@ class GrugThinkBot(commands.Cog):
             return True
 
         return False
+
+    def detect_cross_bot_mentions(self, message) -> list:
+        """Detect mentions of other bot names in a message."""
+        mentioned_bots = []
+        content_lower = message.content.lower()
+
+        # Common bot names to look for (more comprehensive list)
+        bot_names = ["grug", "big rob", "rob", "adaptive", "markov", "grugthink"]
+
+        # Also check for variations
+        name_variations = {
+            "big rob": ["big rob", "bigrob", "rob"],
+            "grug": ["grug", "grugthink"],
+            "adaptive": ["adaptive", "adapt"],
+            "markov": ["markov"],
+        }
+
+        for bot_name in bot_names:
+            # Check primary name
+            if re.search(rf"\b{re.escape(bot_name.lower())}\b", content_lower):
+                mentioned_bots.append(bot_name)
+                continue
+
+            # Check variations
+            for main_name, variations in name_variations.items():
+                if bot_name == main_name:
+                    for variation in variations:
+                        if re.search(rf"\b{re.escape(variation.lower())}\b", content_lower):
+                            mentioned_bots.append(bot_name)
+                            break
+
+        return list(set(mentioned_bots))  # Remove duplicates
+
+    def store_cross_bot_mention(self, mentioning_source: str, mentioned_bot_names: list, message):
+        """Store cross-bot mentions for later reference."""
+        server_id = str(message.guild.id) if message.guild else "dm"
+        channel_id = str(message.channel.id)
+
+        for mentioned_bot in mentioned_bot_names:
+            # Normalize the mentioned bot name
+            mentioned_bot_normalized = mentioned_bot.lower()
+
+            # Create a simpler key structure for easier retrieval
+            mention_key = f"{server_id}:{channel_id}:{mentioned_bot_normalized}:{int(time.time())}"
+            mention_data = {
+                "mentioning_bot": mentioning_source,
+                "mentioned_bot": mentioned_bot_normalized,
+                "message_content": message.content,
+                "message_id": message.id,
+                "channel_id": channel_id,
+                "server_id": server_id,
+                "timestamp": time.time(),
+            }
+            cross_bot_mentions.put(mention_key, mention_data)
+
+            log.info(
+                "Cross-bot mention stored",
+                extra={
+                    "mentioning_source": mentioning_source,
+                    "mentioned_bot": mentioned_bot_normalized,
+                    "server_id": server_id,
+                    "channel_id": channel_id,
+                    "mention_key": mention_key,
+                    "message_content": message.content[:100],
+                    "total_mentions_cached": len(cross_bot_mentions.cache),
+                },
+            )
+
+    def get_recent_mentions_about_bot(self, bot_name: str, server_id: str, channel_id: str) -> list:
+        """Get recent mentions about this bot from other sources."""
+        mentions = []
+        bot_name_lower = bot_name.lower()
+
+        # Also check for name variations
+        name_to_check = [bot_name_lower]
+        if "rob" in bot_name_lower:
+            name_to_check.extend(["big rob", "rob"])
+        elif "grug" in bot_name_lower:
+            name_to_check.extend(["grug", "grugthink"])
+
+        log.info(
+            "Checking for cross-bot mentions",
+            extra={
+                "bot_name": bot_name,
+                "names_to_check": name_to_check,
+                "server_id": server_id,
+                "channel_id": channel_id,
+                "cache_size": len(cross_bot_mentions.cache),
+            },
+        )
+
+        # Check all stored mentions for ones about this bot
+        for key, mention_data in cross_bot_mentions.cache.items():
+            if mention_data and isinstance(mention_data, tuple):
+                _, data = mention_data
+                mentioned_bot = data.get("mentioned_bot", "").lower()
+
+                if (
+                    any(name in mentioned_bot or mentioned_bot in name for name in name_to_check)
+                    and data.get("server_id") == server_id
+                    and data.get("channel_id") == channel_id
+                ):
+                    mentions.append(data)
+                    log.info(
+                        "Found cross-bot mention",
+                        extra={
+                            "mentioned_bot": data.get("mentioned_bot"),
+                            "mentioning_source": data.get("mentioning_bot"),
+                            "content": data.get("message_content", "")[:100],
+                        },
+                    )
+
+        # Sort by timestamp, most recent first
+        mentions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        return mentions[:3]  # Return up to 3 most recent mentions
+
+    def get_cross_bot_topic_context(self, statement: str, current_bot_name: str) -> str:
+        """Get context from other bots about topics mentioned in the statement."""
+        statement_lower = statement.lower()
+        current_bot_lower = current_bot_name.lower()
+
+        # Topics to check for
+        topic_keywords = {
+            "carling": ["carling", "beer", "drink", "pint"],
+            "beer": ["beer", "carling", "drink", "pint", "ale"],
+            "food": ["pie", "potato", "shepherd", "meat", "food", "grub"],
+            "pie": ["pie", "potato", "shepherd", "meat", "food"],
+            "fight": ["fight", "beat", "strong", "tough", "battle"],
+            "football": ["football", "footy", "norf", "fc", "team"],
+            "caveman": ["caveman", "mammoth", "cave", "stone", "hunt"],
+        }
+
+        # Check which topics this statement relates to
+        relevant_topics = []
+        for topic, keywords in topic_keywords.items():
+            if any(keyword in statement_lower for keyword in keywords):
+                relevant_topics.append(topic)
+
+        if not relevant_topics:
+            return ""
+
+        # Look for responses from other bots about these topics
+        other_bot_responses = []
+        for topic in relevant_topics:
+            for key, topic_data in cross_bot_topic_responses.cache.items():
+                if topic_data and isinstance(topic_data, tuple):
+                    _, data = topic_data
+                    if data.get("topic") == topic and data.get("bot_name", "").lower() != current_bot_lower:
+                        other_bot_responses.append(data)
+
+        if not other_bot_responses:
+            return ""
+
+        # Sort by timestamp and get the most recent response
+        other_bot_responses.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        latest_response = other_bot_responses[0]
+
+        other_bot_name = latest_response.get("bot_name", "another bot")
+        other_response = latest_response.get("response", "")
+
+        log.info(
+            "Found cross-bot topic context",
+            extra={
+                "current_bot": current_bot_name,
+                "other_bot": other_bot_name,
+                "topic": latest_response.get("topic"),
+                "other_response": other_response[:100],
+            },
+        )
+
+        # Format context based on current bot's personality
+        if "grug" in current_bot_lower:
+            return f" Grug hear {other_bot_name} say: '{other_response[:80]}'. "
+        elif "rob" in current_bot_lower:
+            return f" Heard {other_bot_name} chattin: '{other_response[:80]}' - "
+        else:
+            return f" {other_bot_name} said: '{other_response[:80]}'. "
+
+    async def store_bot_response_after_edit(self, message, response_content: str, server_id: str):
+        """Store bot response for cross-bot detection after message edit."""
+        try:
+            # Create a mock message object for the cross-bot detection
+            # This simulates what would happen if this was a new message
+            bot_name = self.personality_engine.get_personality(server_id).chosen_name or "Bot"
+
+            # Check if this response mentions other bots
+            mentioned_bots = self.detect_cross_bot_mentions_in_text(response_content)
+            if mentioned_bots:
+                # Create a simplified message data structure
+                class MockMessage:
+                    def __init__(self, content, channel, guild, author_name):
+                        self.content = content
+                        self.channel = channel
+                        self.guild = guild
+                        self.id = message.id  # Use the actual message ID
+                        self.author_name = author_name
+
+                mock_message = MockMessage(response_content, message.channel, message.guild, bot_name)
+
+                # Store the cross-bot mention using the bot as the mentioning source
+                self.store_cross_bot_mention(bot_name, mentioned_bots, mock_message)
+
+                log.info(
+                    "Stored cross-bot mentions from edited bot response",
+                    extra={
+                        "bot_id": self.get_bot_id(),
+                        "bot_name": bot_name,
+                        "mentioned_bots": mentioned_bots,
+                        "response_content": response_content[:100],
+                    },
+                )
+        except Exception as e:
+            log.error(
+                "Failed to store bot response after edit",
+                extra={"bot_id": self.get_bot_id(), "error": str(e), "response_content": response_content[:100]},
+            )
+
+    def detect_cross_bot_mentions_in_text(self, text: str) -> list:
+        """Detect mentions of other bot names in text content."""
+        mentioned_bots = []
+        content_lower = text.lower()
+
+        # Common bot names to look for (more comprehensive list)
+        bot_names = ["grug", "big rob", "rob", "adaptive", "markov", "grugthink"]
+
+        # Also check for variations
+        name_variations = {
+            "big rob": ["big rob", "bigrob", "rob"],
+            "grug": ["grug", "grugthink"],
+            "adaptive": ["adaptive", "adapt"],
+            "markov": ["markov"],
+        }
+
+        for bot_name in bot_names:
+            # Check primary name
+            if re.search(rf"\b{re.escape(bot_name.lower())}\b", content_lower):
+                mentioned_bots.append(bot_name)
+                continue
+
+            # Check variations
+            for main_name, variations in name_variations.items():
+                if bot_name == main_name:
+                    for variation in variations:
+                        if re.search(rf"\b{re.escape(variation.lower())}\b", content_lower):
+                            mentioned_bots.append(bot_name)
+                            break
+
+        return list(set(mentioned_bots))  # Remove duplicates
 
     async def handle_auto_verification(self, message, server_id: str, personality):
         """Handle automatic verification when bot name is mentioned."""
@@ -552,6 +912,58 @@ class GrugThinkBot(commands.Cog):
         # Clean up extra whitespace
         clean_content = re.sub(r"\s+", " ", clean_content).strip()
 
+        # Check for recent mentions about this bot and prepare cross-bot response
+        channel_id = str(message.channel.id)
+        recent_mentions = self.get_recent_mentions_about_bot(bot_name, server_id, channel_id)
+        cross_bot_context = ""
+
+        # Also check for topic-based cross-bot responses
+        topic_context = self.get_cross_bot_topic_context(clean_content, bot_name)
+
+        if recent_mentions:
+            # Only process mentions from other BOTS, not users
+            bot_mentions = [m for m in recent_mentions if not m.get("mentioning_bot", "").startswith("user:")]
+
+            if bot_mentions:
+                latest_mention = bot_mentions[0]
+                mentioning_source = latest_mention.get("mentioning_bot", "another bot")
+                mention_content = latest_mention.get("message_content", "")
+
+                # Create a unique key to track if we've already responded to this cross-reference
+                response_key = f"{server_id}:{channel_id}:{latest_mention.get('message_id')}:{self.get_bot_id()}"
+
+                if response_key not in cross_bot_responses:
+                    cross_bot_responses[response_key] = time.time()
+
+                    if personality.response_style == "caveman":
+                        cross_bot_context = f" Grug hear {mentioning_source} say about Grug: '{mention_content[:80]}'. "
+                    elif personality.response_style == "british_working_class":
+                        cross_bot_context = (
+                            f" Heard {mentioning_source} been chattin bout me: '{mention_content[:80]}' - "
+                        )
+                    else:
+                        cross_bot_context = f" I noticed {mentioning_source} mentioned me: '{mention_content[:80]}'. "
+
+                    log.info(
+                        "Adding cross-bot mention context to response",
+                        extra={
+                            "bot_id": self.get_bot_id(),
+                            "mentioning_source": mentioning_source,
+                            "context_added": cross_bot_context[:50],
+                        },
+                    )
+
+        if not cross_bot_context and topic_context:
+            # If no bot mentions but there's topic-based context, use that
+            cross_bot_context = topic_context
+            log.info(
+                "Adding cross-bot topic context to response",
+                extra={
+                    "bot_id": self.get_bot_id(),
+                    "topic_context": topic_context[:50],
+                },
+            )
+
         # Skip if the remaining content is too short or just punctuation
         if len(clean_content) < 5 or not re.search(r"[a-zA-Z]", clean_content):
             # Respond with a personality-appropriate acknowledgment
@@ -573,13 +985,13 @@ class GrugThinkBot(commands.Cog):
                 else:
                     response = f"Hello {other_bot_name}! What would you like me to verify?"
             else:
-                # Normal human responses
+                # Normal human responses - include cross-bot context if available
                 if personality.response_style == "caveman":
-                    response = f"{bot_name} hear you call!"
+                    response = f"{bot_name} hear you call!{cross_bot_context}"
                 elif personality.response_style == "british_working_class":
-                    response = "wot you want mate, nuff said"
+                    response = f"wot you want mate, nuff said{cross_bot_context}"
                 else:
-                    response = "I'm listening. What would you like me to verify?"
+                    response = f"I'm listening. What would you like me to verify?{cross_bot_context}"
 
             await message.channel.send(response)
             return
@@ -613,13 +1025,21 @@ class GrugThinkBot(commands.Cog):
             # Run verification in executor to avoid blocking
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
-                None, query_model, clean_content, server_db, server_id, self.personality_engine
+                None, query_model, clean_content, server_db, server_id, self.personality_engine, self.get_bot_id()
             )
 
             if result:
                 # Apply personality style to response
                 styled_result = self.personality_engine.get_response_with_style(server_id, result)
-                await thinking_message.edit(content=styled_result)
+
+                # Add cross-bot context if available
+                if cross_bot_context:
+                    styled_result = styled_result + cross_bot_context
+
+                # Delete the thinking message and post final response as new message
+                # This ensures Discord triggers on_message for cross-bot detection
+                await thinking_message.delete()
+                await message.channel.send(styled_result)
 
                 log.info(
                     "Auto-verification completed",
@@ -637,7 +1057,8 @@ class GrugThinkBot(commands.Cog):
             else:
                 # Use personality-appropriate error message
                 error_msg = self.personality_engine.get_error_message(server_id)
-                await thinking_message.edit(content=f"❓ {error_msg}")
+                await thinking_message.delete()
+                await message.channel.send(f"❓ {error_msg}")
 
         except Exception as exc:
             log.error(
@@ -651,7 +1072,8 @@ class GrugThinkBot(commands.Cog):
             )
             # Use personality for error message
             error_msg = self.personality_engine.get_error_message(server_id)
-            await thinking_message.edit(content=f"💥 {error_msg}")
+            await thinking_message.delete()
+            await message.channel.send(f"💥 {error_msg}")
 
     @app_commands.command(name="verify", description="Verify the truthfulness of the previous message.")
     async def verify(self, interaction: discord.Interaction):
@@ -686,7 +1108,7 @@ class GrugThinkBot(commands.Cog):
             server_db = self.get_server_db(interaction)
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
-                None, query_model, target, server_db, server_id, self.personality_engine
+                None, query_model, target, server_db, server_id, self.personality_engine, self.get_bot_id()
             )
 
             if result:
