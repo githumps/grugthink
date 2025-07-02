@@ -134,12 +134,69 @@ def _pair_key(name_a: str, name_b: str, server_id: str, channel_id: str) -> str:
 
 def generate_shit_talk(target_name: str, style: str) -> str:
     """Return a short insult aimed at another bot."""
+    import random
+
     target = target_name.strip()
+
     if style == "caveman":
-        return f" {target} weak. Grug strongest!"
-    if style == "british_working_class":
-        return f" oi {target}, pipe down ya muppet"
-    return f" {target} clearly clueless"
+        caveman_insults = [
+            f"{target} weak. Grug strongest!",
+            f"{target} soft like mammoth belly!",
+            f"Grug smash {target} with big rock!",
+            f"{target} no can hunt. Grug better!",
+            f"{target} brain small like pebble!",
+            f"Grug eat {target} for breakfast!",
+            f"{target} weaker than sick woolly!",
+            f"Grug club {target} into next cave!",
+            f"{target} no know fire. Grug know fire!",
+            f"{target} run from sabertooth. Grug fight sabertooth!",
+            f"Grug throw {target} into tar pit!",
+            f"{target} hide in cave like scared rabbit!",
+        ]
+        return random.choice(caveman_insults)
+
+    elif style == "british_working_class":
+        british_insults = [
+            f"oi {target}, pipe down ya muppet",
+            f"{target}'s a right tosser, innit",
+            f"get stuffed {target}, you plonker",
+            f"{target} couldn't organize a piss-up in a brewery",
+            f"shut it {target}, you absolute weapon",
+            f"{target}'s thick as two short planks",
+            f"do one {target}, ya numpty",
+            f"{target} talks pure waffle, simple as",
+            f"wind your neck in {target}, you melt",
+            f"{target}'s got more issues than a newsstand",
+            f"bore off {target}, you proper div",
+            f"{target} couldn't find water in a swimming pool",
+        ]
+        return random.choice(british_insults)
+
+    elif style == "adaptive":
+        adaptive_insults = [
+            f"{target} clearly clueless",
+            f"{target} needs a reality check",
+            f"{target} talking nonsense again",
+            f"{target} should stick to lurking",
+            f"{target}'s logic is fundamentally flawed",
+            f"{target} missed the point entirely",
+            f"{target} needs to recalibrate their thinking",
+            f"{target}'s analysis is rather shallow",
+            f"{target} should consider alternative perspectives",
+            f"{target}'s reasoning lacks nuance",
+            f"{target} demonstrates poor comprehension",
+            f"{target} fails to grasp the complexity here",
+        ]
+        return random.choice(adaptive_insults)
+
+    # Default fallback insults for unknown styles
+    default_insults = [
+        f"{target} clearly clueless",
+        f"{target} needs a reality check",
+        f"{target} talking nonsense again",
+        f"{target} should stick to lurking",
+    ]
+    return random.choice(default_insults)
 
 
 def get_server_db(interaction_or_guild_id):
@@ -362,6 +419,59 @@ def search_google(query: str) -> str:
     return ""
 
 
+def get_cross_bot_personality_info(server_id: str = "global") -> dict:
+    """Get personality information about other bots in the system."""
+    personality_info = {}
+    try:
+        # In multi-bot mode, try to access bot manager for personality information
+        from .main import get_bot_manager
+
+        bot_manager = get_bot_manager()
+        if bot_manager:
+            for bot_id, bot_instance in bot_manager.bots.items():
+                try:
+                    # Get the bot's personality for this server
+                    personality = bot_instance.personality_engine.get_personality(server_id)
+                    bot_name = personality.chosen_name or personality.name
+
+                    # Create a recognizable key from bot name
+                    personality_info[bot_id] = {
+                        "name": bot_name,
+                        "response_style": personality.response_style,
+                        "personality_traits": personality.personality_traits,
+                        "background_elements": personality.background_elements,
+                    }
+
+                    # Also add by name for easier lookup
+                    name_key = bot_name.lower().replace(" ", "_")
+                    personality_info[name_key] = personality_info[bot_id]
+
+                except Exception as e:
+                    log.debug("Could not access bot personality", extra={"bot_id": bot_id, "error": str(e)})
+    except ImportError:
+        # Not in multi-bot mode, provide fallback personality info for known bots
+        personality_info.update(
+            {
+                "grug": {
+                    "name": "Grug",
+                    "response_style": "caveman",
+                    "personality_traits": {"strength": "physical", "intelligence": "primitive"},
+                    "background_elements": ["lives in cave", "hunts mammoth", "uses primitive tools"],
+                },
+                "big_rob": {
+                    "name": "Big Rob",
+                    "response_style": "british_working_class",
+                    "personality_traits": {"strength": "opiniated", "intelligence": "street_smart"},
+                    "background_elements": ["British working class", "football fan", "strong opinions"],
+                },
+            }
+        )
+    except Exception as e:
+        log.debug("Could not access bot manager", extra={"error": str(e)})
+
+    return personality_info
+
+
 def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str = None) -> str:
     """Get memories from other bots in the same server for context."""
     try:
@@ -370,6 +480,9 @@ def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str =
         # Try to access other bot databases if available
         # This will only work in multi-bot mode where we can access the bot manager
         cross_bot_context = ""
+
+        # Get personality information about other bots
+        personality_info = get_cross_bot_personality_info(server_id)
 
         # For now, we'll implement a simple system that looks for other bot data directories
         # In a more advanced implementation, this could access the BotManager directly
@@ -389,7 +502,52 @@ def get_cross_bot_memories(statement: str, server_id: str, current_bot_id: str =
                             temp_db = temp_manager.get_server_db(server_id)
                             relevant_facts = temp_db.search_facts(statement, k=2)
                             if relevant_facts:
-                                cross_bot_context += f" {bot_dir} remembers: {' '.join(relevant_facts[:2])}"
+                                bot_info = ""
+                                # Add personality context if available
+                                # Try multiple ways to match bot identity
+                                matched_personality = None
+
+                                # Try exact bot_dir match first
+                                if bot_dir in personality_info:
+                                    matched_personality = personality_info[bot_dir]
+                                else:
+                                    # Try matching by common bot name patterns
+                                    bot_dir_lower = bot_dir.lower()
+                                    for key in personality_info:
+                                        if (
+                                            key in bot_dir_lower
+                                            or bot_dir_lower in key
+                                            or (key == "grug" and "grug" in bot_dir_lower)
+                                            or (key == "big_rob" and ("rob" in bot_dir_lower or "big" in bot_dir_lower))
+                                        ):
+                                            matched_personality = personality_info[key]
+                                            break
+
+                                if matched_personality:
+                                    style = matched_personality.get("response_style", "")
+                                    traits = matched_personality.get("personality_traits", {})
+                                    bot_name = matched_personality.get("name", bot_dir)
+
+                                    if style == "caveman":
+                                        bot_info = f" ({bot_name} - caveman who fights sabertooths and hunts mammoth)"
+                                    elif style == "british_working_class":
+                                        bot_info = f" ({bot_name} - British working class lad with football opinions)"
+                                    elif style == "adaptive":
+                                        bot_info = f" ({bot_name} - adaptive bot that learns and evolves)"
+                                    else:
+                                        bot_info = f" ({bot_name})"
+
+                                    # Add specific traits if they exist
+                                    if traits:
+                                        key_traits = []
+                                        if "strength" in traits:
+                                            key_traits.append(f"strength: {traits['strength']}")
+                                        if "intelligence" in traits:
+                                            key_traits.append(f"smarts: {traits['intelligence']}")
+                                        if key_traits:
+                                            bot_info += f" [{', '.join(key_traits)}]"
+
+                                cross_bot_context += f" {bot_dir}{bot_info} remembers: {' '.join(relevant_facts[:2])}"
                         except Exception as e:
                             log.debug(
                                 "Could not access cross-bot memories", extra={"bot_dir": bot_dir, "error": str(e)}
@@ -616,6 +774,8 @@ class GrugThinkBot(commands.Cog):
                 pair_state[bot_name.lower()] = True
                 cross_bot_responses.put(pair_key, pair_state)
                 insult = generate_shit_talk(other_name, personality.response_style)
+                # Wait a moment to let the other bot finish their main response first
+                await asyncio.sleep(2)
                 await message.channel.send(insult)
             else:
                 cross_bot_responses.put(pair_key, pair_state)

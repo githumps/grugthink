@@ -695,3 +695,40 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 **Solution**: Added a lazy `__getattr__` loader for the `bot` module and limited topic-based cross-bot context to human statements without other bot names.
 
 **Key Learning**: Load optional modules lazily to avoid unnecessary configuration requirements and keep bot replies focused.
+
+### Cross-Bot Insult Timing Fix (2025-07-02 Session)
+**Problem**: When a bot mentioned another bot in their response, the mentioned bot would immediately send an insult before the original bot finished their main response. Insults appeared before the "Thinking..." message was replaced with the actual reply.
+
+**Root Cause**: The insult logic in `on_message` executed immediately when detecting a bot mention, without waiting for the original bot to complete their response flow.
+
+**Solution**: Added 2-second delay using `await asyncio.sleep(2)` before sending insult message in `bot.py:620`.
+
+**Key Learning**: Cross-bot interactions need timing coordination - add delays to prevent race conditions between main responses and secondary reactions like insults.
+
+### Expanded Cross-Bot Insult Variety (2025-07-02 Session)
+**Problem**: Bots were using the same repetitive insults, making cross-bot interactions predictable and boring.
+
+**Solution**: Enhanced `generate_shit_talk()` function with 12 unique insults per personality type:
+- **Caveman**: Primitive insults with mammoth, rock, hunting, and cave themes
+- **British Working Class**: Authentic UK slang with proper dialect ("tosser", "plonker", "muppet", etc.)
+- **Adaptive**: Sophisticated analytical insults matching the personality's intellectual tone
+
+**Implementation**: Used `random.choice()` for variety and personality-specific insult arrays in `bot.py:135-199`.
+
+**Key Learning**: Personality-driven content variety significantly improves user engagement - each bot type should have unique, thematic responses that match their character.
+
+### Enhanced Cross-Bot Knowledge Sharing (2025-07-02 Session)
+**Problem**: Bots knew each other's memories but not personality information, leading to generic cross-bot interactions.
+
+**Solution**: Enhanced the cross-bot memory system to include personality information:
+- **Global Bot Manager Access**: Added `_global_bot_manager` reference in `main.py` for cross-bot communication
+- **Personality Information Sharing**: New `get_cross_bot_personality_info()` function accesses bot personalities
+- **Rich Context in Memory Sharing**: Modified `get_cross_bot_memories()` to include personality descriptions
+- **Intelligent Bot Matching**: Pattern matching for bot identification (grug, big_rob, etc.)
+- **Fallback Data**: Hardcoded personality info for single-bot mode
+
+**Implementation**: Enhanced context now provides descriptions like "(Grug - caveman who fights sabertooths and hunts mammoth) [strength: physical, smarts: primitive]"
+
+**Result**: Bots have authentic knowledge about each other - Big Rob knows Grug is a caveman, Grug knows Big Rob has strong football opinions.
+
+**Key Learning**: Cross-bot interactions are dramatically improved when bots have access to each other's personality information, not just memories.

@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Improved** insults: bots now reply with a single short jab when another bot or user mentions them
 - **Changed** cross-bot insults are sent as a separate message instead of being appended
 - **Fixed** endless cross-bot fights by tracking pair responses with an LRU cache
+- **Fixed** cross-bot insult timing: insults now wait 2 seconds to allow main bot response to complete first
+- **Enhanced** cross-bot insults with 12 unique variations per personality type (caveman, British working class, adaptive) for more engaging interactions
+- **Enhanced** cross-bot knowledge sharing: bots now access each other's personality information, traits, and background for richer interactions
 - **Added** cross-bot memory sharing allowing bots in same channel to access each other's memories
 - **Enhanced** bot interaction dynamics with mention detection and one-time responses
 - **Fixed** cross-bot detection bugs: improved name variations, storage logic, and retrieval matching

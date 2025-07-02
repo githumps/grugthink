@@ -20,14 +20,26 @@ from .grug_structured_logger import get_logger
 
 log = get_logger(__name__)
 
+# Global reference for cross-bot communication
+_global_bot_manager = None
+
+
+def get_bot_manager():
+    """Get the global bot manager instance for cross-bot operations."""
+    return _global_bot_manager
+
 
 class GrugThinkContainer:
     """Main container orchestrator for the multi-bot system."""
 
     def __init__(self):
+        global _global_bot_manager
         self.config_manager = ConfigManager()
         self.bot_manager = BotManager(config_manager=self.config_manager)
         self.api_server = APIServer(self.bot_manager, self.config_manager)
+
+        # Set global reference for cross-bot communication
+        _global_bot_manager = self.bot_manager
 
         self.running = False
         self.tasks = []
