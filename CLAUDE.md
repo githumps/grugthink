@@ -666,3 +666,10 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
    - `status` represents runtime state, `auto_start` represents startup behavior
 
 **Key Learning**: Separate configuration intent (`auto_start`) from runtime state (`status`) to avoid startup conflicts.
+
+### Cross-Bot Insults (2025-07-03 Session)
+**Problem**: Bots saw mentions from others but rarely responded with playful jabs.
+
+**Solution**: Added `generate_shit_talk()` helper in `bot.py` and appended results in `handle_auto_verification`. Bots now issue one short insult when another bot talks about them.
+
+**Key Learning**: Maintain per-mention response tracking to keep conversations civil while letting personalities shine.

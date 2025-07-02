@@ -2077,3 +2077,14 @@ User discovered that README.md referenced `grugthink_config.yaml.example` file t
 - **Working commands**: All documented installation/deployment commands work
 - **Professional presentation**: No broken links or placeholder text
 - **User experience**: Clear, accurate instructions from clone to deployment
+
+## Session: 2025-07-03 - Cross-Bot Insult Enhancement
+
+### Overview
+Implemented refined cross-bot insult logic so bots respond with a single jab when another bot mentions them.
+
+### Changes Made ✅
+- Added `generate_shit_talk` helper in `bot.py` for personality-aware insults.
+- Updated `handle_auto_verification` to append short insults once per mention.
+- Updated changelog with new feature description.
+- Ensured lint and tests all pass (43 passed, 1 skipped).

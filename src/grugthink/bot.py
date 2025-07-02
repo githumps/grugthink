@@ -125,6 +125,16 @@ def store_bot_response_for_cross_reference(response: str, personality_name: str)
         )
 
 
+def generate_shit_talk(target_name: str, style: str) -> str:
+    """Return a short insult aimed at another bot."""
+    target = target_name.strip()
+    if style == "caveman":
+        return f" {target} weak. Grug strongest!"
+    if style == "british_working_class":
+        return f" oi {target}, pipe down ya muppet"
+    return f" {target} clearly clueless"
+
+
 def get_server_db(interaction_or_guild_id):
     """Get the appropriate database for a Discord interaction or guild ID."""
     if hasattr(interaction_or_guild_id, "guild_id"):
@@ -936,13 +946,20 @@ class GrugThinkBot(commands.Cog):
                     cross_bot_responses[response_key] = time.time()
 
                     if personality.response_style == "caveman":
-                        cross_bot_context = f" Grug hear {mentioning_source} say about Grug: '{mention_content[:80]}'. "
-                    elif personality.response_style == "british_working_class":
+                        insult = generate_shit_talk(mentioning_source, "caveman")
                         cross_bot_context = (
-                            f" Heard {mentioning_source} been chattin bout me: '{mention_content[:80]}' - "
+                            f" Grug hear {mentioning_source} say about Grug: '{mention_content[:80]}'." + insult
+                        )
+                    elif personality.response_style == "british_working_class":
+                        insult = generate_shit_talk(mentioning_source, "british_working_class")
+                        cross_bot_context = (
+                            f" Heard {mentioning_source} been chattin bout me: '{mention_content[:80]}' -" + insult
                         )
                     else:
-                        cross_bot_context = f" I noticed {mentioning_source} mentioned me: '{mention_content[:80]}'. "
+                        insult = generate_shit_talk(mentioning_source, "other")
+                        cross_bot_context = (
+                            f" I noticed {mentioning_source} mentioned me: '{mention_content[:80]}'." + insult
+                        )
 
                     log.info(
                         "Adding cross-bot mention context to response",
