@@ -2098,3 +2098,14 @@ Fixed cross-bot insult logic so bots send their jab as its own message rather th
 - Simplified `handle_auto_verification` and moved insult handling to `on_message`.
 - Bots now detect when other bots mention them and reply once with a short insult message.
 - Changelog updated to document the behavioral change.
+
+
+## Session: 2025-07-05 - Pairwise Insult Control
+
+### Overview
+Improved cross-bot insult handling so bots trade only one jab each after a human mention, preventing endless fights.
+
+### Changes Made ✅
+- Introduced `_pair_key` helper and LRU cache to track bot pairs
+- Updated `on_message` logic to mark responses per pair
+- Changelog entry noting fix for infinite insult loops

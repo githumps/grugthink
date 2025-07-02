@@ -65,7 +65,8 @@ user_cooldowns = {}
 
 # Cross-bot interaction tracking
 cross_bot_mentions = LRUCache(max_size=200, ttl_seconds=600)  # Track mentions for 10 minutes
-cross_bot_responses = {}  # Track if bots have already responded to each other
+# Track if bots have already fired back at each other for a given conversation
+cross_bot_responses = LRUCache(max_size=200, ttl_seconds=600)
 cross_bot_topic_responses = LRUCache(max_size=100, ttl_seconds=1800)  # Store bot responses by topic for 30 minutes
 
 # Initialize Server Manager and Personality Engine
@@ -123,6 +124,12 @@ def store_bot_response_for_cross_reference(response: str, personality_name: str)
             "Stored bot response for cross-reference",
             extra={"bot_name": personality_name, "topic": topic, "response": response[:100]},
         )
+
+
+def _pair_key(name_a: str, name_b: str, server_id: str, channel_id: str) -> str:
+    """Return a normalized key for tracking two bots interacting."""
+    names = sorted([name_a.lower(), name_b.lower()])
+    return f"{server_id}:{channel_id}:{names[0]}:{names[1]}"
 
 
 def generate_shit_talk(target_name: str, style: str) -> str:
@@ -596,14 +603,22 @@ class GrugThinkBot(commands.Cog):
             and message.author != self.client.user
             and not is_markov_bot
         ):
-            response_key = f"{server_id}:{message.id}:{self.get_bot_id()}"
-            if response_key not in cross_bot_responses:
-                cross_bot_responses[response_key] = time.time()
-                insult = generate_shit_talk(
-                    message.author.display_name or message.author.name,
-                    personality.response_style,
-                )
+            channel_id = str(message.channel.id)
+            other_name = message.author.display_name or message.author.name
+            pair_key = _pair_key(other_name, bot_name, server_id, channel_id)
+            pair_state = cross_bot_responses.get(pair_key)
+            if pair_state is None:
+                pair_state = {other_name.lower(): True, bot_name.lower(): False}
+            else:
+                pair_state[other_name.lower()] = True
+
+            if not pair_state.get(bot_name.lower(), False):
+                pair_state[bot_name.lower()] = True
+                cross_bot_responses.put(pair_key, pair_state)
+                insult = generate_shit_talk(other_name, personality.response_style)
                 await message.channel.send(insult)
+            else:
+                cross_bot_responses.put(pair_key, pair_state)
             return
 
         if message.author.bot and not is_markov_bot:

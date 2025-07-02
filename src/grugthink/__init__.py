@@ -10,6 +10,7 @@ __author__ = "GrugThink Contributors"
 __description__ = "Adaptable Discord Personality Engine with Multi-Bot Container Support"
 
 # Multi-bot system - core modules always available
+from . import bot
 from .bot_manager import BotConfig, BotInstance, BotManager
 from .config_manager import ConfigManager, ConfigTemplate
 from .grug_db import GrugDB
@@ -36,6 +37,7 @@ __all__ = [
     "BotInstance",
     "ConfigManager",
     "ConfigTemplate",
+    "bot",
 ]
 
 # Only export APIServer if available

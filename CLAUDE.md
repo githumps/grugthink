@@ -680,3 +680,11 @@ should_start = auto_start_flag is True or (auto_start_flag is None and bot_statu
 **Solution**: Moved insult handling to `on_message` so bots send their jab as its own message once per mention.
 
 **Key Learning**: Decoupling insult logic from verification keeps conversation flow natural and prevents quoting the previous bot.
+
+
+### Pairwise Insult Control (2025-07-05 Session)
+**Problem**: Bots would get stuck in endless insult loops when they saw each other's replies.
+
+**Solution**: Introduced `_pair_key` and an LRU cache to track when each bot has already insulted the other. `on_message` now checks this cache so each bot fires back only once per pair.
+
+**Key Learning**: Track per-pair insult state to keep conversations short and prevent runaway back-and-forth.
