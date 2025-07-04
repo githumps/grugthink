@@ -295,6 +295,26 @@ class GrugDB:
                 log.error("Error getting all facts", extra={"error": str(e)})
                 return []
 
+    def delete_fact(self, fact_content: str) -> bool:
+        """Delete a fact from the database."""
+        with self.lock:
+            try:
+                cursor = self.conn.cursor()
+                cursor.execute("DELETE FROM facts WHERE server_id = ? AND content = ?", (self.server_id, fact_content))
+                deleted_count = cursor.rowcount
+                self.conn.commit()
+
+                if deleted_count > 0:
+                    log.info("Deleted fact", extra={"fact": fact_content, "count": deleted_count})
+                    return True
+                else:
+                    log.warning("Fact not found for deletion", extra={"fact": fact_content})
+                    return False
+
+            except Exception as e:
+                log.error("Error deleting fact", extra={"error": str(e), "fact": fact_content})
+                return False
+
     def save_index(self):
         """Save the FAISS index to disk."""
         with self.lock:

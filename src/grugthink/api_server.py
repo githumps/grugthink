@@ -10,7 +10,9 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
+from functools import wraps
 from typing import Any, Dict, List, Optional, Set
 
 import requests
@@ -37,6 +39,40 @@ from .grug_structured_logger import get_logger
 
 # In-memory log storage for web dashboard
 RECENT_LOGS: List[Dict[str, str]] = []
+
+# Simple cache for API responses
+API_CACHE: Dict[str, tuple] = {}  # key: (data, timestamp)
+CACHE_TTL = 30  # seconds
+
+
+def cache_response(ttl: int = CACHE_TTL):
+    """Decorator to cache API responses for better performance."""
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Create cache key from function name and args
+            cache_key = f"{func.__name__}:{hash(str(args) + str(kwargs))}"
+
+            # Check cache
+            if cache_key in API_CACHE:
+                data, timestamp = API_CACHE[cache_key]
+                if time.time() - timestamp < ttl:
+                    return data
+
+            # Execute function and cache result
+            result = await func(*args, **kwargs)
+            API_CACHE[cache_key] = (result, time.time())
+
+            # Clean old cache entries periodically
+            if len(API_CACHE) > 100:
+                API_CACHE.clear()  # Simple cleanup
+
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 class InMemoryLogHandler(logging.Handler):
@@ -114,8 +150,10 @@ class UpdateBotRequest(BaseModel):
     ollama_models: Optional[str] = None
     google_api_key: Optional[str] = None
     google_cse_id: Optional[str] = None
+    personality: Optional[str] = None
     force_personality: Optional[str] = None
     load_embedder: Optional[bool] = None
+    log_level: Optional[str] = None
     trusted_user_ids: Optional[str] = None
 
 
@@ -160,6 +198,9 @@ class APIServer:
             title="GrugThink Management API",
             description="API for managing multiple Discord bot instances",
             version="2.0.0",
+            # Performance optimizations
+            docs_url=None,  # Disable docs in production
+            redoc_url=None,  # Disable redoc in production
         )
 
         # Get session secret from config manager or environment
@@ -177,21 +218,46 @@ class APIServer:
         # WebSocket connections for real-time updates
         self.websocket_connections: List[WebSocket] = []
 
-        # Add CORS middleware
+        # Add CORS middleware with optimizations
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],  # Configure appropriately for production
             allow_credentials=True,
-            allow_methods=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE"],  # Specific methods only
             allow_headers=["*"],
         )
+
+        # Add gzip compression middleware
+        from fastapi.middleware.gzip import GZipMiddleware
+
+        self.app.add_middleware(GZipMiddleware, minimum_size=1000)
 
         # Setup routes
         self._setup_routes()
 
-        # Setup static file serving for web dashboard
+        # Setup static file serving for web dashboard with caching
         try:
-            self.app.mount("/static", StaticFiles(directory="web/static"), name="static")
+            # Custom StaticFiles with better caching headers
+            class CachedStaticFiles(StaticFiles):
+                def file_response(
+                    self, full_path: str, stat_result: os.stat_result, scope: dict, status_code: int = 200
+                ):
+                    response = super().file_response(full_path, stat_result, scope, status_code)
+                    from pathlib import Path
+
+                    path_obj = Path(full_path)
+                    # Add cache headers for better performance
+                    if path_obj.suffix in [".css", ".js", ".png", ".jpg", ".ico"]:
+                        response.headers["Cache-Control"] = "public, max-age=86400"  # 1 day
+                    elif path_obj.suffix in [".html"]:
+                        response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes
+
+                    # Add compression hint
+                    response.headers["Vary"] = "Accept-Encoding"
+
+                    return response
+
+            self.app.mount("/static", CachedStaticFiles(directory="web/static"), name="static")
         except Exception:
             log.warning("Static files directory not found, web dashboard may not work")
 
@@ -204,12 +270,34 @@ class APIServer:
         """Setup FastAPI routes."""
 
         def get_current_user(request: Request) -> Dict[str, Any]:
+            # Check if OAuth is disabled
+            disable_oauth = False
+            if self.config_manager:
+                disable_oauth = self.config_manager.get_env_var("DISABLE_OAUTH", "false").lower() == "true"
+            else:
+                disable_oauth = os.getenv("DISABLE_OAUTH", "false").lower() == "true"
+
+            if disable_oauth:
+                # Return dummy user when OAuth is disabled
+                return {"id": "admin", "username": "admin"}
+
             user = request.session.get("user")
             if not user:
                 raise HTTPException(status_code=401, detail="Not authenticated")
             return user
 
         def admin_required(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+            # Check if OAuth is disabled - if so, skip trusted user checks
+            disable_oauth = False
+            if self.config_manager:
+                disable_oauth = self.config_manager.get_env_var("DISABLE_OAUTH", "false").lower() == "true"
+            else:
+                disable_oauth = os.getenv("DISABLE_OAUTH", "false").lower() == "true"
+
+            if disable_oauth:
+                # When OAuth is disabled, allow all access
+                return user
+
             # Get trusted users from config manager or environment
             trusted_str = ""
             if self.config_manager:
@@ -226,10 +314,18 @@ class APIServer:
         # Dashboard route
         @self.app.get("/")
         async def dashboard(request: Request):
-            # Check if user is authenticated
-            user = request.session.get("user")
-            if not user:
-                return RedirectResponse("/login")
+            # Check if OAuth is disabled
+            disable_oauth = False
+            if self.config_manager:
+                disable_oauth = self.config_manager.get_env_var("DISABLE_OAUTH", "false").lower() == "true"
+            else:
+                disable_oauth = os.getenv("DISABLE_OAUTH", "false").lower() == "true"
+
+            if not disable_oauth:
+                # Check if user is authenticated
+                user = request.session.get("user")
+                if not user:
+                    return RedirectResponse("/login")
 
             try:
                 return FileResponse("web/index.html")
@@ -238,6 +334,17 @@ class APIServer:
 
         @self.app.get("/login")
         async def login():
+            # Check if OAuth is disabled
+            disable_oauth = False
+            if self.config_manager:
+                disable_oauth = self.config_manager.get_env_var("DISABLE_OAUTH", "false").lower() == "true"
+            else:
+                disable_oauth = os.getenv("DISABLE_OAUTH", "false").lower() == "true"
+
+            if disable_oauth:
+                # If OAuth is disabled, redirect to dashboard
+                return RedirectResponse("/")
+
             # Get Discord OAuth settings from config manager
             client_id = None
             redirect_uri = None
@@ -337,6 +444,17 @@ class APIServer:
         @self.app.get("/api/user")
         async def get_user(request: Request):
             """Get current authenticated user info."""
+            # Check if OAuth is disabled
+            disable_oauth = False
+            if self.config_manager:
+                disable_oauth = self.config_manager.get_env_var("DISABLE_OAUTH", "false").lower() == "true"
+            else:
+                disable_oauth = os.getenv("DISABLE_OAUTH", "false").lower() == "true"
+
+            if disable_oauth:
+                # Return dummy user when OAuth is disabled
+                return {"id": "admin", "username": "admin"}
+
             user = request.session.get("user")
             if not user:
                 raise HTTPException(status_code=401, detail="Not authenticated")
@@ -543,7 +661,21 @@ class APIServer:
                 log.error("Failed to update config", extra={"error": str(e)})
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.post("/api/templates/sync", dependencies=[Depends(admin_required)])
+        async def sync_personalities_to_templates():
+            """Automatically create templates for personalities that don't have them."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            try:
+                self.config_manager.sync_personalities_to_templates()
+                return {"message": "Personalities synchronized to templates successfully"}
+            except Exception as e:
+                log.error("Failed to sync personalities to templates", extra={"error": str(e)})
+                raise HTTPException(status_code=500, detail=f"Failed to sync: {str(e)}")
+
         @self.app.get("/api/templates", dependencies=[Depends(admin_required)])
+        @cache_response(ttl=300)  # Cache for 5 minutes
         async def list_templates():
             """List available bot templates."""
             templates = self.config_manager.list_templates()
@@ -551,7 +683,7 @@ class APIServer:
                 template_id: {
                     "name": template.name,
                     "description": template.description,
-                    "force_personality": template.force_personality,
+                    "force_personality": template.get_personality(),  # Use unified method
                     "load_embedder": template.load_embedder,
                 }
                 for template_id, template in templates.items()
@@ -575,6 +707,7 @@ class APIServer:
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get("/api/discord-tokens", dependencies=[Depends(admin_required)])
+        @cache_response(ttl=60)  # Cache for 1 minute
         async def list_discord_tokens():
             """List Discord tokens (without revealing actual tokens)."""
             tokens = self.config_manager.get_discord_tokens()
@@ -681,6 +814,155 @@ class APIServer:
                 raise HTTPException(status_code=404, detail=f"Personality '{personality_id}' not found")
             return {"personality": personality}
 
+        @self.app.post("/api/personalities/generate", dependencies=[Depends(admin_required)])
+        async def generate_personality_with_ai(request: Dict[str, str]):
+            """Generate a personality using Gemini AI based on user description."""
+            if not self.config_manager:
+                raise HTTPException(status_code=500, detail="Configuration manager not available")
+
+            description = request.get("description", "").strip()
+            personality_id = request.get("personality_id", "").strip()
+
+            if not description or not personality_id:
+                raise HTTPException(status_code=400, detail="Both 'description' and 'personality_id' are required")
+
+            # Check if personality already exists
+            existing = self.config_manager.get_personality(personality_id)
+            if existing:
+                raise HTTPException(status_code=409, detail=f"Personality '{personality_id}' already exists")
+
+            try:
+                # Import Gemini functionality
+                import google.generativeai as genai
+
+                # Get Gemini API key from ConfigManager instead of environment
+                gemini_keys = self.config_manager.get_api_keys("gemini")
+                gemini_api_key = gemini_keys.get("primary")
+
+                if not gemini_api_key:
+                    raise HTTPException(status_code=500, detail="Gemini API key not configured")
+
+                genai.configure(api_key=gemini_api_key)
+
+                # Get model from config or use default
+                gemini_model = self.config_manager.get_env_var("GEMINI_MODEL", "gemini-pro")
+                model = genai.GenerativeModel(gemini_model)
+
+                # Create the prompt for personality generation
+                prompt = f"""You are an expert YAML personality designer for Discord chatbots.
+Create a personality YAML configuration based on this description: "{description}"
+
+Your output must follow this EXACT structure and format. Be creative but maintain the structure:
+
+```yaml
+name: "Character Name Here"
+description: "Brief description of the character"
+
+behavior:
+  emotions:
+    confused: "How they express confusion"
+    excited: "How they express excitement"
+    happy: "How they express happiness"
+    sad: "How they express sadness"
+  response_patterns:
+    agreement: "How they agree with something"
+    confusion: "How they ask for clarification"
+    disagreement: "How they disagree"
+    farewell: "How they say goodbye"
+    greeting: "How they greet people"
+    learning: "How they respond when learning something new"
+
+speech:
+  catchphrases:
+    - "First catchphrase"
+    - "Second catchphrase"
+    - "Third catchphrase"
+    - "Fourth catchphrase"
+    - "Fifth catchphrase"
+  error_prefix: "What they say before errors:"
+  help_prefix: "What they say before helping:"
+  sentence_structure: "simple/casual/formal/complex"
+  thinking_prefix: "What they say while thinking..."
+  verification_prefix: "How they start factual statements:"
+  vocabulary_level: "basic/colloquial/normal/advanced"
+  word_replacements:
+    original_word: "replacement_word"
+    another_word: "replacement"
+
+traits:
+  emotional_range: "basic/normal/complex"
+  humor_style: "innocent/cheeky/sarcastic/dry/playful"
+  intelligence_level: "simple/average/advanced/genius"
+  verbosity: "concise/normal/verbose"
+```
+
+Generate ONLY the YAML content. No explanation, no markdown formatting,
+just the raw YAML that can be parsed directly."""
+
+                # Generate personality with Gemini
+                response = model.generate_content(prompt)
+                generated_yaml = response.text.strip()
+
+                # Clean up any markdown formatting that might have leaked through
+                if "```yaml" in generated_yaml:
+                    generated_yaml = generated_yaml.split("```yaml")[1].split("```")[0].strip()
+                elif "```" in generated_yaml:
+                    generated_yaml = generated_yaml.split("```")[1].split("```")[0].strip()
+
+                # Validate YAML structure
+                import yaml
+
+                try:
+                    personality_data = yaml.safe_load(generated_yaml)
+                    if not isinstance(personality_data, dict):
+                        raise ValueError("Generated content is not a valid YAML object")
+
+                    # Ensure required fields exist
+                    required_fields = ["name", "description", "behavior", "speech", "traits"]
+                    for field in required_fields:
+                        if field not in personality_data:
+                            raise ValueError(f"Missing required field: {field}")
+
+                except yaml.YAMLError as e:
+                    raise HTTPException(status_code=500, detail=f"Generated YAML is invalid: {str(e)}")
+                except ValueError as e:
+                    raise HTTPException(status_code=500, detail=f"Generated content validation failed: {str(e)}")
+
+                # Save the personality
+                success = self.config_manager.add_personality(personality_id, personality_data)
+                if not success:
+                    raise HTTPException(status_code=500, detail="Failed to save generated personality")
+
+                # Also save to personalities directory as YAML file
+                import os
+
+                personalities_dir = "personalities"
+                if not os.path.exists(personalities_dir):
+                    os.makedirs(personalities_dir)
+
+                yaml_file_path = os.path.join(personalities_dir, f"{personality_id}.yaml")
+                with open(yaml_file_path, "w") as f:
+                    f.write(generated_yaml)
+
+                # Auto-sync personalities to templates
+                self.config_manager.sync_personalities_to_templates()
+
+                await self._broadcast_update("personality_created", {"personality_id": personality_id})
+
+                return {
+                    "message": f"Personality '{personality_id}' generated and saved successfully",
+                    "personality_id": personality_id,
+                    "generated_yaml": generated_yaml,
+                    "personality_data": personality_data,
+                }
+
+            except ImportError:
+                raise HTTPException(
+                    status_code=500, detail="Gemini AI not available - missing google-generativeai package"
+                )
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to generate personality: {str(e)}")
+
         @self.app.post("/api/personalities/{personality_id}", dependencies=[Depends(admin_required)])
         async def create_personality(personality_id: str, personality_config: Dict[str, Any]):
             """Create a new personality configuration."""
@@ -694,6 +976,9 @@ class APIServer:
 
             success = self.config_manager.add_personality(personality_id, personality_config)
             if success:
+                # Auto-sync personalities to templates
+                self.config_manager.sync_personalities_to_templates()
+
                 await self._broadcast_update("personality_created", {"personality_id": personality_id})
                 return {"message": f"Personality '{personality_id}' created successfully"}
             else:
@@ -724,6 +1009,107 @@ class APIServer:
                 return {"message": f"Personality '{personality_id}' deleted successfully"}
             else:
                 raise HTTPException(status_code=404, detail=f"Personality '{personality_id}' not found")
+
+        # Memory management endpoints
+        @self.app.get("/api/bots/{bot_id}/memories", dependencies=[Depends(admin_required)])
+        async def get_bot_memories(bot_id: str, search: str = None, limit: int = 100):
+            """Get memories for a specific bot."""
+            if not self.bot_manager:
+                raise HTTPException(status_code=500, detail="Bot manager not available")
+
+            try:
+                # Get the bot's server manager and database
+                bot = self.bot_manager.bots.get(bot_id)
+                if not bot:
+                    raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+
+                server_manager = getattr(bot, "server_manager", None)
+                if not server_manager:
+                    raise HTTPException(status_code=500, detail="Server manager not available")
+
+                # Get default server database for this bot
+                server_db = server_manager.get_server_db("default")
+
+                if search:
+                    facts = server_db.search_facts(search, k=limit)
+                else:
+                    facts = server_db.get_all_facts()[:limit]
+
+                return {
+                    "bot_id": bot_id,
+                    "total_memories": len(server_db.get_all_facts()),
+                    "memories": [{"id": i, "content": fact} for i, fact in enumerate(facts)],
+                    "search": search,
+                    "limit": limit,
+                }
+
+            except Exception as e:
+                log.error("Failed to get bot memories", extra={"bot_id": bot_id, "error": str(e)})
+                raise HTTPException(status_code=500, detail=f"Failed to get memories: {str(e)}")
+
+        @self.app.post("/api/bots/{bot_id}/memories", dependencies=[Depends(admin_required)])
+        async def add_bot_memory(bot_id: str, memory: Dict[str, str]):
+            """Add a new memory to a bot."""
+            if not self.bot_manager:
+                raise HTTPException(status_code=500, detail="Bot manager not available")
+
+            content = memory.get("content", "").strip()
+            if not content:
+                raise HTTPException(status_code=400, detail="Memory content is required")
+
+            try:
+                bot = self.bot_manager.bots.get(bot_id)
+                if not bot:
+                    raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+
+                server_manager = getattr(bot, "server_manager", None)
+                if not server_manager:
+                    raise HTTPException(status_code=500, detail="Server manager not available")
+
+                server_db = server_manager.get_server_db("default")
+                success = server_db.add_fact(content)
+
+                if success:
+                    return {"message": "Memory added successfully", "content": content}
+                else:
+                    return {"message": "Memory already exists", "content": content}
+
+            except Exception as e:
+                log.error("Failed to add bot memory", extra={"bot_id": bot_id, "error": str(e)})
+                raise HTTPException(status_code=500, detail=f"Failed to add memory: {str(e)}")
+
+        @self.app.delete("/api/bots/{bot_id}/memories", dependencies=[Depends(admin_required)])
+        async def delete_bot_memory(bot_id: str, memory: Dict[str, str]):
+            """Delete a memory from a bot."""
+            if not self.bot_manager:
+                raise HTTPException(status_code=500, detail="Bot manager not available")
+
+            content = memory.get("content", "").strip()
+            if not content:
+                raise HTTPException(status_code=400, detail="Memory content is required")
+
+            try:
+                bot = self.bot_manager.bots.get(bot_id)
+                if not bot:
+                    raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+
+                server_manager = getattr(bot, "server_manager", None)
+                if not server_manager:
+                    raise HTTPException(status_code=500, detail="Server manager not available")
+
+                server_db = server_manager.get_server_db("default")
+
+                # Delete fact from database
+                success = server_db.delete_fact(content)
+
+                if success:
+                    return {"message": "Memory deleted successfully"}
+                else:
+                    raise HTTPException(status_code=404, detail="Memory not found")
+
+            except Exception as e:
+                log.error("Failed to delete bot memory", extra={"bot_id": bot_id, "error": str(e)})
+                raise HTTPException(status_code=500, detail=f"Failed to delete memory: {str(e)}")
 
         # Template management endpoints
         @self.app.get("/api/templates", dependencies=[Depends(admin_required)])
