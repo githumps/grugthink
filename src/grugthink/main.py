@@ -127,23 +127,47 @@ class GrugThinkContainer:
             if auto_start_bots:
                 log.info("Starting configured bots", extra={"count": len(auto_start_bots)})
 
-                for bot in auto_start_bots:
-                    try:
-                        await self.bot_manager.start_bot(bot["bot_id"])
-                        await asyncio.sleep(5)  # Stagger starts
-                    except Exception as e:
-                        log.error("Failed to start bot", extra={"bot_id": bot["bot_id"], "error": str(e)})
+                # Start bots concurrently for better performance
+                start_tasks = []
+                for i, bot in enumerate(auto_start_bots):
+                    # Stagger starts by 2 seconds instead of 5
+                    start_tasks.append(asyncio.create_task(self._start_bot_with_delay(bot["bot_id"], i * 2)))
+
+                # Wait for all bots to start
+                if start_tasks:
+                    await asyncio.gather(*start_tasks, return_exceptions=True)
             else:
                 log.info("No bots configured for auto-start")
 
         except Exception as e:
             log.error("Error starting configured bots", extra={"error": str(e)})
 
+    async def _start_bot_with_delay(self, bot_id: str, delay: int):
+        """Start a bot with a specified delay."""
+        try:
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await self.bot_manager.start_bot(bot_id)
+        except Exception as e:
+            log.error("Failed to start bot", extra={"bot_id": bot_id, "error": str(e)})
+
     async def _run_api_server(self, port: int):
-        """Run the API server."""
+        """Run the API server with performance optimizations."""
         import uvicorn
 
-        config = uvicorn.Config(self.api_server.app, host="0.0.0.0", port=port, log_level="info")
+        config = uvicorn.Config(
+            self.api_server.app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            # Performance optimizations
+            workers=1,  # Single worker for container
+            loop="asyncio",
+            http="h11",
+            access_log=False,  # Disable access logs for performance
+            server_header=False,  # Remove server header
+            date_header=False,  # Remove date header
+        )
         server = uvicorn.Server(config)
         await server.serve()
 

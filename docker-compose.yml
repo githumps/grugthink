@@ -9,6 +9,7 @@ services:
     volumes:
       - ./data:/data:rw
       - ./grugthink_config.yaml:/app/grugthink_config.yaml:rw
+      - ./personalities:/app/personalities:rw
     environment:
       - LOG_LEVEL=INFO
       - GRUGBOT_DATA_DIR=/data

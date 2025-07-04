@@ -37,8 +37,8 @@ class BotConfig:
     personality: Optional[str] = None  # Personality ID from personality configs
     force_personality: Optional[str] = None  # Deprecated, use personality instead
     load_embedder: bool = True
-    log_level: str = "INFO"
-    data_dir: str = "./data"
+    log_level: str = "DEBUG"
+    data_dir: str = None  # Will be set from environment in __post_init__
     trusted_user_ids: Optional[str] = None
     status: str = "stopped"  # stopped, starting, running, stopping, error
     auto_start: Optional[bool] = None  # Whether to auto-start this bot on container startup
@@ -54,6 +54,9 @@ class BotConfig:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = time.time()
+        if self.data_dir is None:
+            # Use environment variable for data directory, fallback to ./data
+            self.data_dir = os.getenv("GRUGBOT_DATA_DIR", "./data")
 
 
 @dataclass
@@ -219,7 +222,11 @@ class BotManager:
 
         with self._lock:
             del self.bots[bot_id]
-            self._save_configs()
+            # Remove from persistent configuration
+            if self.config_manager:
+                self.config_manager.remove_bot_config(bot_id)
+            else:
+                log.warning("No ConfigManager available, bot config may persist in file")
 
         log.info("Deleted bot", extra={"bot_id": bot_id})
         return True
@@ -275,6 +282,8 @@ class BotManager:
             "last_heartbeat": instance.last_heartbeat,
             "guild_count": 0,
             "guild_ids": [],
+            "log_level": getattr(config, "log_level", "INFO"),
+            "load_embedder": getattr(config, "load_embedder", True),
         }
 
         # Add runtime info if bot is running
