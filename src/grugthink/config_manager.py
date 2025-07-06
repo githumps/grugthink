@@ -51,6 +51,10 @@ class ConfigTemplate:
     default_ollama: bool = False
     custom_env: Dict[str, str] = field(default_factory=dict)
 
+    def get_personality(self) -> Optional[str]:
+        """Get the personality for this template, checking both new and deprecated fields."""
+        return self.personality or self.force_personality
+
 
 if _WATCHDOG_AVAILABLE:
 
@@ -430,6 +434,7 @@ class ConfigManager:
         personalities = self.get_config("personalities") or {}
         personalities[personality_id] = personality_config
         self.set_config("personalities", personalities)
+        self.save_personality_to_file(personality_id, personality_config)
         log.info("Added personality", extra={"personality_id": personality_id})
         return True
 
@@ -439,9 +444,28 @@ class ConfigManager:
         if personality_id in personalities:
             personalities[personality_id].update(updates)
             self.set_config("personalities", personalities)
+            self.save_personality_to_file(personality_id, personalities[personality_id])
             log.info("Updated personality", extra={"personality_id": personality_id})
             return True
         return False
+
+    def save_personality_to_file(self, personality_id: str, data: Dict[str, Any]) -> bool:
+        """Persist personality YAML in the personalities directory."""
+        if not _YAML_AVAILABLE:
+            log.warning("PyYAML not available; cannot save personality file", extra={"personality_id": personality_id})
+            return False
+
+        os.makedirs("personalities", exist_ok=True)
+        file_path = os.path.join("personalities", f"{personality_id}.yaml")
+
+        try:
+            with open(file_path, "w") as f:
+                yaml.safe_dump(data, f, indent=2, default_flow_style=False)
+            log.debug("Saved personality file", extra={"personality_id": personality_id, "file": file_path})
+            return True
+        except Exception as e:
+            log.error("Failed to save personality file", extra={"personality_id": personality_id, "error": str(e)})
+            return False
 
     def remove_personality(self, personality_id: str) -> bool:
         """Remove a personality configuration."""
@@ -449,24 +473,89 @@ class ConfigManager:
         if personality_id in personalities:
             del personalities[personality_id]
             self.set_config("personalities", personalities)
+
+            # Also remove the physical file from personalities directory
+            file_path = os.path.join("personalities", f"{personality_id}.yaml")
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    log.debug("Removed personality file", extra={"personality_id": personality_id, "file": file_path})
+            except Exception as e:
+                log.warning(
+                    "Failed to remove personality file", extra={"personality_id": personality_id, "error": str(e)}
+                )
+
             log.info("Removed personality", extra={"personality_id": personality_id})
             return True
         return False
 
     def list_templates(self) -> Dict[str, ConfigTemplate]:
         """List all available templates."""
-        templates = self.templates.copy()
-
-        # Add templates from config file
+        templates = {}
+        
+        # Load templates from config file first (higher priority)
         config_templates = self.get_config("bot_templates") or {}
         for template_id, template_data in config_templates.items():
-            if template_id not in templates:
-                try:
-                    templates[template_id] = ConfigTemplate(**template_data)
-                except Exception as e:
-                    log.error("Invalid template in config", extra={"template_id": template_id, "error": str(e)})
+            try:
+                templates[template_id] = ConfigTemplate(**template_data)
+            except Exception as e:
+                log.error("Invalid template in config", extra={"template_id": template_id, "error": str(e)})
+
+        # Only add hardcoded templates if no config templates exist (for backwards compatibility)
+        if not config_templates:
+            for template_id, template in self.templates.items():
+                templates[template_id] = template
 
         return templates
+
+    def sync_personalities_to_templates(self):
+        """Automatically create bot templates for personalities that don't have them."""
+        personalities = self.list_personalities()
+        existing_templates = self.get_config("bot_templates") or {}
+
+        # Find personalities that don't have corresponding templates
+        templates_with_personalities = set()
+        for template_data in existing_templates.values():
+            # Check both new and deprecated personality fields
+            personality = template_data.get("personality") or template_data.get("force_personality")
+            if personality:
+                templates_with_personalities.add(personality)
+
+        personalities_without_templates = set(personalities.keys()) - templates_with_personalities
+
+        if personalities_without_templates:
+            log.info(
+                "Auto-creating templates for personalities",
+                extra={"personalities": list(personalities_without_templates)},
+            )
+
+            for personality_id in personalities_without_templates:
+                personality_data = personalities[personality_id]
+                personality_name = personality_data.get("name", personality_id.replace("_", " ").title())
+                personality_desc = personality_data.get("description", f"{personality_name} personality")
+
+                # Create a template for this personality
+                template_id = f"pure_{personality_id}"
+                template_config = {
+                    "name": f"Pure {personality_name}",
+                    "description": f"{personality_desc}",
+                    "force_personality": personality_id,  # Use deprecated field for compatibility
+                    "personality": personality_id,  # Also include new field
+                    "load_embedder": True,
+                    "default_gemini_key": True,
+                    "default_google_search": False,
+                    "default_ollama": False,
+                    "custom_env": {},
+                }
+
+                existing_templates[template_id] = template_config
+                log.info(
+                    "Created template for personality",
+                    extra={"template_id": template_id, "personality_id": personality_id},
+                )
+
+            # Save the updated templates
+            self.set_config("bot_templates", existing_templates)
 
     def create_bot_env(self, template_id: str, discord_token: str, **overrides) -> Dict[str, str]:
         """Create environment variables for a bot from template."""

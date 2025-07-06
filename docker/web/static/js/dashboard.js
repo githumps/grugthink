@@ -1,4 +1,4 @@
-// GrugThink Dashboard JavaScript
+// GrugThink Dashboard JavaScript - Performance Optimized
 
 class GrugThinkDashboard {
     constructor() {
@@ -7,11 +7,48 @@ class GrugThinkDashboard {
         this.bots = [];
         this.templates = {};
         this.tokens = [];
+        this.loadingStates = new Set();
+        this.updateQueue = new Map();
+        this.lastLoadTimes = new Map();
+        
+        // Performance optimizations
+        this.debounceTimeout = null;
+        this.rafId = null;
         
         this.initTheme();
-        this.initWebSocket();
         this.bindEvents();
-        this.loadInitialData();
+        this.loadInitialDataAsync();
+    }
+    
+    // Optimized initial loading with lazy initialization
+    async loadInitialDataAsync() {
+        // Load critical data first
+        await this.loadUser();
+        
+        // Delay WebSocket connection slightly to allow page to render
+        setTimeout(() => this.initWebSocket(), 100);
+        
+        // Load dashboard data immediately for first tab
+        await this.loadDashboard();
+        
+        // Lazy load other data only when needed
+        this.lazyLoadRemaining();
+    }
+    
+    // Lazy load non-critical data
+    async lazyLoadRemaining() {
+        // Use requestIdleCallback if available for better performance
+        const loadFunc = async () => {
+            await this.loadBots();
+            await this.loadTemplates();
+            await this.loadTokens();
+        };
+        
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(loadFunc, { timeout: 2000 });
+        } else {
+            setTimeout(loadFunc, 500);
+        }
     }
 
     // WebSocket connection for real-time updates
@@ -97,22 +134,52 @@ class GrugThinkDashboard {
     }
 
     onTabSwitch(tabName) {
-        switch (tabName) {
-            case 'dashboard':
-                this.loadDashboard();
-                break;
-            case 'bots':
-                this.loadBots();
-                break;
-            case 'configuration':
-                this.loadConfiguration();
-                break;
-            case 'templates':
-                this.loadTemplates();
-                break;
-            case 'monitoring':
-                this.loadLogs();
-                break;
+        // Debounce tab switching to prevent rapid API calls
+        if (this.debounceTimeout) {
+            clearTimeout(this.debounceTimeout);
+        }
+        
+        this.debounceTimeout = setTimeout(() => {
+            this.loadTabData(tabName);
+        }, 150);
+    }
+    
+    async loadTabData(tabName) {
+        // Check if data is already loading
+        if (this.loadingStates.has(tabName)) {
+            return;
+        }
+        
+        // Check cache validity (cache for 30 seconds)
+        const lastLoad = this.lastLoadTimes.get(tabName);
+        const now = Date.now();
+        if (lastLoad && (now - lastLoad) < 30000) {
+            return; // Use cached data
+        }
+        
+        this.loadingStates.add(tabName);
+        this.lastLoadTimes.set(tabName, now);
+        
+        try {
+            switch (tabName) {
+                case 'dashboard':
+                    await this.loadDashboard();
+                    break;
+                case 'bots':
+                    await this.loadBots();
+                    break;
+                case 'configuration':
+                    await this.loadConfiguration();
+                    break;
+                case 'templates':
+                    await this.loadTemplates();
+                    break;
+                case 'monitoring':
+                    await this.loadLogs();
+                    break;
+            }
+        } finally {
+            this.loadingStates.delete(tabName);
         }
     }
 
@@ -127,17 +194,43 @@ class GrugThinkDashboard {
         ]);
     }
 
-    // API calls
+    // Optimized API calls with caching and request deduplication
     async apiCall(endpoint, options = {}) {
+        const cacheKey = `${endpoint}:${JSON.stringify(options)}`;
+        
+        // Check if request is already in flight
+        if (this.updateQueue.has(cacheKey)) {
+            return this.updateQueue.get(cacheKey);
+        }
+        
+        const requestPromise = this._performApiCall(endpoint, options);
+        this.updateQueue.set(cacheKey, requestPromise);
+        
         try {
+            const result = await requestPromise;
+            return result;
+        } finally {
+            // Clean up after request completes
+            this.updateQueue.delete(cacheKey);
+        }
+    }
+    
+    async _performApiCall(endpoint, options = {}) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+            
             const response = await fetch(`${this.apiBase}/api${endpoint}`, {
-                credentials: 'include', // Include session cookies
+                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
                 },
+                signal: controller.signal,
                 ...options
             });
+            
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error(`API call failed: ${response.status}`);
@@ -145,8 +238,13 @@ class GrugThinkDashboard {
             
             return await response.json();
         } catch (error) {
-            console.error('API call error:', error);
-            this.showAlert('API call failed: ' + error.message, 'danger');
+            if (error.name === 'AbortError') {
+                console.warn('API call timed out:', endpoint);
+                this.showAlert('Request timed out. Please try again.', 'warning');
+            } else {
+                console.error('API call error:', error);
+                this.showAlert('API call failed: ' + error.message, 'danger');
+            }
             throw error;
         }
     }
@@ -236,8 +334,16 @@ class GrugThinkDashboard {
             </button>`);
         }
         
+        buttons.push(`<button class="btn btn-secondary btn-action" onclick="dashboard.editBot('${bot.bot_id}')" title="Edit Bot">
+            <i class="bi bi-pencil"></i>
+        </button>`);
+        
         buttons.push(`<button class="btn btn-info btn-action" onclick="dashboard.viewBotLogs('${bot.bot_id}')" title="View Logs">
             <i class="bi bi-file-text"></i>
+        </button>`);
+        
+        buttons.push(`<button class="btn btn-warning btn-action" onclick="dashboard.openMemoryManager('${bot.bot_id}', '${bot.name}')" title="Manage Memory">
+            <i class="bi bi-memory"></i>
         </button>`);
         
         buttons.push(`<button class="btn btn-danger btn-action" onclick="dashboard.deleteBot('${bot.bot_id}')">
@@ -288,6 +394,56 @@ class GrugThinkDashboard {
             this.loadBots();
         } catch (error) {
             this.showAlert('Failed to delete bot', 'danger');
+        }
+    }
+
+    async editBot(botId) {
+        try {
+            const bot = await this.apiCall(`/bots/${botId}`);
+            this.showEditBotModal(bot);
+        } catch (error) {
+            this.showAlert('Failed to load bot details', 'danger');
+        }
+    }
+
+    showEditBotModal(bot) {
+        // Populate the edit modal with bot data
+        document.getElementById('edit-bot-id').value = bot.bot_id;
+        document.getElementById('edit-bot-name').value = bot.name;
+        document.getElementById('edit-bot-personality').value = bot.personality || bot.force_personality || '';
+        document.getElementById('edit-bot-load-embedder').checked = bot.load_embedder !== false;
+        document.getElementById('edit-bot-log-level').value = bot.log_level || 'INFO';
+        
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('editBotModal'));
+        modal.show();
+    }
+
+    async saveEditBot() {
+        try {
+            const botId = document.getElementById('edit-bot-id').value;
+            const personalityValue = document.getElementById('edit-bot-personality').value;
+            const updates = {
+                name: document.getElementById('edit-bot-name').value,
+                personality: personalityValue,  // Use the new personality field
+                force_personality: personalityValue,  // Keep for backward compatibility
+                load_embedder: document.getElementById('edit-bot-load-embedder').checked,
+                log_level: document.getElementById('edit-bot-log-level').value
+            };
+
+            await this.apiCall(`/bots/${botId}`, {
+                method: 'PUT',
+                body: JSON.stringify(updates)
+            });
+
+            this.showAlert('Bot updated successfully', 'success');
+            this.loadBots();
+            
+            // Hide the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editBotModal'));
+            modal.hide();
+        } catch (error) {
+            this.showAlert('Failed to update bot', 'danger');
         }
     }
 
@@ -374,6 +530,18 @@ class GrugThinkDashboard {
             const response = await this.apiCall(`/templates/${templateId}`);
             const template = response.template;
             this.showTemplateEditModal(templateId, template);
+
+            const personalityId = template.personality || template.force_personality;
+            if (personalityId) {
+                try {
+                    const pres = await this.apiCall(`/personalities/${personalityId}`);
+                    const yamlText = jsyaml.dump(pres.personality || {});
+                    document.getElementById('edit-personality-yaml').value = yamlText;
+                    document.getElementById('edit-personality-yaml').setAttribute('data-personality-id', personalityId);
+                } catch (err) {
+                    console.error('Failed to load personality', err);
+                }
+            }
         } catch (error) {
             console.error('Failed to load template:', error);
             this.showAlert('Failed to load template for editing', 'danger');
@@ -494,6 +662,13 @@ class GrugThinkDashboard {
                                     </select>
                                     <div class="form-text">Controls verbosity of bot logging</div>
                                 </div>
+
+                                <!-- Personality YAML -->
+                                <h6 class="text-primary mb-3 mt-4">Personality YAML</h6>
+                                <div class="mb-3">
+                                    <textarea class="form-control font-monospace" id="edit-personality-yaml" rows="10"></textarea>
+                                    <div class="form-text">Edit full personality definition</div>
+                                </div>
                             </form>
                         </div>
                         <div class="modal-footer">
@@ -552,8 +727,28 @@ class GrugThinkDashboard {
             log_level: document.getElementById('edit-template-log-level').value,
             custom_env: customEnv
         };
+
+        // Parse personality YAML and save
+        const personalityField = document.getElementById('edit-personality-yaml');
+        const personalityId = personalityField.getAttribute('data-personality-id');
+        let personalityData = {};
+        if (personalityField.value.trim()) {
+            try {
+                personalityData = jsyaml.load(personalityField.value);
+            } catch (err) {
+                this.showAlert('Invalid YAML in Personality definition', 'danger');
+                return;
+            }
+        }
         
         try {
+            if (personalityId && Object.keys(personalityData).length > 0) {
+                await this.apiCall(`/personalities/${personalityId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(personalityData)
+                });
+            }
+
             await this.apiCall(`/templates/${templateId}`, {
                 method: 'PUT',
                 body: JSON.stringify(templateData)
@@ -819,7 +1014,7 @@ class GrugThinkDashboard {
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
-                            <div id="botLogsContainer" style="max-height: 400px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 5px;"></div>
+                            <div id="botLogsContainer" style="max-height: 400px; overflow-y: auto; background: var(--bg-secondary); padding: 15px; border-radius: 5px;"></div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -854,8 +1049,14 @@ class GrugThinkDashboard {
             return;
         }
         
-        container.innerHTML = logs.map(log => `
-            <div class="log-entry log-${log.level} mb-2 p-2" style="border-left: 3px solid ${this.getLogColor(log.level)}; background: white;">
+        container.innerHTML = logs.map(log => {
+            const extraDetails = Object.entries(log)
+                .filter(([k]) => !['level', 'message', 'timestamp', 'logger'].includes(k))
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('<br>');
+
+            return `
+            <div class="log-entry log-${log.level} mb-2 p-2" style="border-left: 3px solid ${this.getLogColor(log.level)}; background: var(--card-bg);">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <span class="badge bg-${this.getLogBadgeColor(log.level)} me-2">${log.level.toUpperCase()}</span>
@@ -863,9 +1064,10 @@ class GrugThinkDashboard {
                     </div>
                 </div>
                 <div class="mt-1">${log.message}</div>
+                ${extraDetails ? `<pre class="p-2 mt-1 small" style="background: var(--bg-tertiary);">${extraDetails}</pre>` : ''}
                 ${log.logger ? `<small class="text-muted">Logger: ${log.logger}</small>` : ''}
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
         
         // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
@@ -968,6 +1170,7 @@ class GrugThinkDashboard {
 
     setTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-bs-theme', theme);
         localStorage.setItem('grugthink-theme', theme);
         
         // Update theme toggle button
@@ -981,6 +1184,335 @@ class GrugThinkDashboard {
             themeIcon.className = 'bi bi-moon-fill';
             themeText.textContent = 'Dark';
         }
+    }
+
+    // AI Personality Generation functions
+    async generatePersonality() {
+        const personalityId = document.getElementById('personality-id').value.trim();
+        const description = document.getElementById('personality-description').value.trim();
+        
+        if (!personalityId || !description) {
+            this.showAlert('Please fill in both personality ID and description', 'warning');
+            return;
+        }
+        
+        // Validate personality ID format
+        if (!/^[a-z_][a-z0-9_]*$/.test(personalityId)) {
+            this.showAlert('Personality ID must start with a letter or underscore and contain only lowercase letters, numbers, and underscores', 'danger');
+            return;
+        }
+        
+        // Show progress and hide buttons
+        document.getElementById('generation-progress').style.display = 'block';
+        document.getElementById('generation-result').style.display = 'none';
+        document.getElementById('generate-personality-btn').disabled = true;
+        document.getElementById('save-personality-btn').style.display = 'none';
+        
+        try {
+            const response = await this.apiCall('/personalities/generate', {
+                method: 'POST',
+                body: JSON.stringify({
+                    personality_id: personalityId,
+                    description: description
+                })
+            });
+            
+            // Show the generated YAML
+            document.getElementById('generated-yaml').value = response.generated_yaml;
+            document.getElementById('generation-result').style.display = 'block';
+            document.getElementById('save-personality-btn').style.display = 'inline-block';
+            document.getElementById('generate-personality-btn').textContent = 'Regenerate';
+            
+            // Store the response for saving
+            this.generatedPersonalityData = response;
+            
+            this.showAlert('Personality generated successfully! Review and save when ready.', 'success');
+            
+        } catch (error) {
+            console.error('Failed to generate personality:', error);
+            this.showAlert('Failed to generate personality. Please try again.', 'danger');
+        } finally {
+            document.getElementById('generation-progress').style.display = 'none';
+            document.getElementById('generate-personality-btn').disabled = false;
+        }
+    }
+    
+    async saveGeneratedPersonality() {
+        if (!this.generatedPersonalityData) {
+            this.showAlert('No personality data to save', 'danger');
+            return;
+        }
+        
+        try {
+            // Store the personality ID before clearing the data
+            const personalityId = this.generatedPersonalityData.personality_id;
+            
+            // Personality is already saved by the generation endpoint
+            // Just close the modal and refresh
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createPersonalityModal'));
+            modal.hide();
+            
+            // Reset the form
+            document.getElementById('create-personality-form').reset();
+            document.getElementById('generation-result').style.display = 'none';
+            document.getElementById('save-personality-btn').style.display = 'none';
+            document.getElementById('generate-personality-btn').textContent = 'Generate with AI';
+            this.generatedPersonalityData = null;
+            
+            // Refresh templates to show updated personality options
+            await this.loadTemplates();
+            
+            this.showAlert(`Personality '${personalityId}' saved successfully!`, 'success');
+            
+        } catch (error) {
+            console.error('Failed to save personality:', error);
+            this.showAlert('Failed to save personality', 'danger');
+        }
+    }
+
+    // Memory Management Functions
+    currentBotId = null;
+    currentMemories = [];
+    filteredMemories = [];
+    memoryPage = 1;
+    memoriesPerPage = 20;
+    memorySearchQuery = '';
+
+    async openMemoryManager(botId, botName) {
+        this.currentBotId = botId;
+        document.getElementById('memory-bot-name').textContent = botName;
+        document.getElementById('memory-search').value = '';
+        this.memorySearchQuery = '';
+        this.memoryPage = 1;
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('memoryManagementModal'));
+        modal.show();
+        
+        // Load memories
+        await this.loadMemories();
+    }
+
+    async loadMemories() {
+        try {
+            // Show loading state
+            document.getElementById('memory-list').innerHTML = `
+                <div class="text-center py-3">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div class="mt-2 text-muted">Loading memories...</div>
+                </div>
+            `;
+            
+            const response = await this.apiCall(`/bots/${this.currentBotId}/memories?limit=1000`);
+            this.currentMemories = response.memories || [];
+            this.filteredMemories = [...this.currentMemories];
+            
+            this.updateMemoryDisplay();
+            this.updateMemoryStats();
+            
+        } catch (error) {
+            console.error('Failed to load memories:', error);
+            document.getElementById('memory-list').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    Failed to load memories: ${error.message}
+                </div>
+            `;
+        }
+    }
+
+    searchMemories(query) {
+        this.memorySearchQuery = query.toLowerCase();
+        this.memoryPage = 1;
+        
+        if (!query.trim()) {
+            this.filteredMemories = [...this.currentMemories];
+        } else {
+            this.filteredMemories = this.currentMemories.filter(memory => 
+                memory.content.toLowerCase().includes(this.memorySearchQuery)
+            );
+        }
+        
+        this.updateMemoryDisplay();
+        this.updateMemoryStats();
+    }
+
+    updateMemoryDisplay() {
+        const startIndex = (this.memoryPage - 1) * this.memoriesPerPage;
+        const endIndex = startIndex + this.memoriesPerPage;
+        const pageMemories = this.filteredMemories.slice(startIndex, endIndex);
+        
+        const memoryList = document.getElementById('memory-list');
+        
+        if (pageMemories.length === 0) {
+            memoryList.innerHTML = `
+                <div class="text-center py-4">
+                    <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+                    <div class="mt-2 text-muted">
+                        ${this.memorySearchQuery ? 'No memories found matching your search.' : 'No memories found for this bot.'}
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        const memoryItems = pageMemories.map((memory, index) => `
+            <div class="card mb-2">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="memory-content">${this.escapeHtml(memory.content)}</div>
+                            <div class="text-muted small mt-1">
+                                ID: ${memory.id} | Added: ${new Date().toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div class="flex-shrink-0 ms-3">
+                            <button class="btn btn-sm btn-outline-danger" 
+                                    onclick="dashboard.deleteMemory('${this.escapeHtml(memory.content)}')"
+                                    title="Delete Memory">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        memoryList.innerHTML = memoryItems;
+        this.updateMemoryPagination();
+    }
+
+    updateMemoryStats() {
+        document.getElementById('total-memories-count').textContent = this.currentMemories.length;
+        document.getElementById('filtered-memories-count').textContent = this.filteredMemories.length;
+    }
+
+    updateMemoryPagination() {
+        const totalPages = Math.ceil(this.filteredMemories.length / this.memoriesPerPage);
+        const paginationInfo = document.getElementById('memory-pagination-info');
+        const paginationNav = document.getElementById('memory-pagination');
+        
+        // Update pagination info
+        const startIndex = (this.memoryPage - 1) * this.memoriesPerPage + 1;
+        const endIndex = Math.min(this.memoryPage * this.memoriesPerPage, this.filteredMemories.length);
+        paginationInfo.textContent = `Showing ${startIndex}-${endIndex} of ${this.filteredMemories.length} memories`;
+        
+        // Update pagination buttons
+        if (totalPages <= 1) {
+            paginationNav.innerHTML = '';
+            return;
+        }
+        
+        let paginationHTML = '';
+        
+        // Previous button
+        paginationHTML += `
+            <li class="page-item ${this.memoryPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="dashboard.changeMemoryPage(${this.memoryPage - 1})">Previous</a>
+            </li>
+        `;
+        
+        // Page numbers (show up to 5 pages)
+        const startPage = Math.max(1, this.memoryPage - 2);
+        const endPage = Math.min(totalPages, this.memoryPage + 2);
+        
+        for (let i = startPage; i <= endPage; i++) {
+            paginationHTML += `
+                <li class="page-item ${i === this.memoryPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="dashboard.changeMemoryPage(${i})">${i}</a>
+                </li>
+            `;
+        }
+        
+        // Next button
+        paginationHTML += `
+            <li class="page-item ${this.memoryPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="dashboard.changeMemoryPage(${this.memoryPage + 1})">Next</a>
+            </li>
+        `;
+        
+        paginationNav.innerHTML = paginationHTML;
+    }
+
+    changeMemoryPage(page) {
+        const totalPages = Math.ceil(this.filteredMemories.length / this.memoriesPerPage);
+        if (page < 1 || page > totalPages) return;
+        
+        this.memoryPage = page;
+        this.updateMemoryDisplay();
+    }
+
+    showAddMemoryForm() {
+        document.getElementById('add-memory-form').style.display = 'block';
+        document.getElementById('new-memory-content').focus();
+    }
+
+    hideAddMemoryForm() {
+        document.getElementById('add-memory-form').style.display = 'none';
+        document.getElementById('new-memory-content').value = '';
+    }
+
+    async addMemory() {
+        const content = document.getElementById('new-memory-content').value.trim();
+        
+        if (!content) {
+            this.showAlert('Please enter memory content', 'warning');
+            return;
+        }
+        
+        try {
+            await this.apiCall(`/bots/${this.currentBotId}/memories`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content })
+            });
+            
+            this.showAlert('Memory added successfully', 'success');
+            this.hideAddMemoryForm();
+            await this.loadMemories();
+            
+        } catch (error) {
+            console.error('Failed to add memory:', error);
+            this.showAlert(`Failed to add memory: ${error.message}`, 'danger');
+        }
+    }
+
+    async deleteMemory(content) {
+        if (!confirm('Are you sure you want to delete this memory? This action cannot be undone.')) {
+            return;
+        }
+        
+        try {
+            await this.apiCall(`/bots/${this.currentBotId}/memories`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content })
+            });
+            
+            this.showAlert('Memory deleted successfully', 'success');
+            await this.loadMemories();
+            
+        } catch (error) {
+            console.error('Failed to delete memory:', error);
+            this.showAlert(`Failed to delete memory: ${error.message}`, 'danger');
+        }
+    }
+
+    refreshMemories() {
+        this.loadMemories();
+    }
+
+    escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
     }
 }
 

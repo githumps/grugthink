@@ -8,6 +8,7 @@ Run with PYTHONUNBUFFERED so every print is flushed immediately.
 import asyncio
 import hashlib
 import os
+import random
 import re
 import signal
 import sys
@@ -319,8 +320,10 @@ def clean_statement(text: str) -> str:
     return text.strip()
 
 
-def get_cache_key(statement: str) -> str:
-    return hashlib.md5(statement.encode()).hexdigest()
+def get_cache_key(statement: str, bot_id: str | None = None) -> str:
+    """Return a cache key unique to the statement and bot."""
+    key_source = f"{bot_id}:{statement}" if bot_id else statement
+    return hashlib.md5(key_source.encode()).hexdigest()
 
 
 def is_rate_limited(user_id: int, bot_id: str = None) -> bool:
@@ -343,7 +346,7 @@ def is_rate_limited(user_id: int, bot_id: str = None) -> bool:
 
 
 def extract_lore_from_response(response: str, server_db, personality_name: str = None):
-    """Extract and save new lore to bot's brain."""
+    """Extract and save new factual lore to bot's brain, filtering out emotional responses."""
     try:
         # Extract all sentences from the response after TRUE/FALSE verdict
         # Split on TRUE/FALSE and take everything after the dash
@@ -359,32 +362,17 @@ def extract_lore_from_response(response: str, server_db, personality_name: str =
         for sentence in lore_sentences:
             sentence_clean = sentence.strip().capitalize()
             if sentence_clean and len(sentence_clean) > 15:
-                # Skip generic/filler phrases but allow meaningful content
-                skip_phrases = ["simple as", "nuff said", "end of", "innit"]
-                if any(sentence_clean.lower().strip().endswith(skip) for skip in skip_phrases):
-                    continue
-                if sentence_clean.lower().strip() in skip_phrases:
+                # Enhanced filtering for better fact quality
+                if not _is_factual_content(sentence_clean):
                     continue
 
+                # Extract and enhance family relationships
+                family_fact = _extract_family_relationships(sentence_clean, personality_name)
+                if family_fact:
+                    sentence_clean = family_fact
+
                 # Skip if it's just filler words
-                filler_words = [
-                    "the",
-                    "a",
-                    "an",
-                    "is",
-                    "are",
-                    "was",
-                    "were",
-                    "of",
-                    "for",
-                    "to",
-                    "in",
-                    "on",
-                    "it",
-                    "that",
-                    "this",
-                ]
-                meaningful_words = [word for word in sentence_clean.lower().split() if word not in filler_words]
+                meaningful_words = _get_meaningful_words(sentence_clean)
                 if len(meaningful_words) < 3:
                     continue
 
@@ -395,17 +383,153 @@ def extract_lore_from_response(response: str, server_db, personality_name: str =
                     contextual_sentence = sentence_clean
 
                 if server_db.add_fact(contextual_sentence):
-                    log.info("New lore learned", extra={"lore": contextual_sentence})
+                    log.debug("New factual lore learned", extra={"lore": contextual_sentence})
                 else:
-                    log.info("Lore already known", extra={"lore": contextual_sentence})
+                    log.debug("Factual lore already known", extra={"lore": contextual_sentence})
     except Exception as e:
         log.error("Error extracting lore", extra={"error": str(e)})
 
 
-def search_google(query: str) -> str:
+def _is_factual_content(sentence: str) -> bool:
+    """Determine if a sentence contains factual information worth storing."""
+    sentence_lower = sentence.lower()
+
+    # Skip defensive/emotional responses
+    defensive_patterns = [
+        "mind yer own business",
+        "don't be askin",
+        "listen 'ere",
+        "ya nosy",
+        "ask about",
+        "problem",
+        "nuff said",
+        "simple as",
+        "end of",
+        "innit",
+        "don't appreciate",
+        "ya git",
+        "shut up",
+        "go away",
+        "leave me alone",
+    ]
+    if any(pattern in sentence_lower for pattern in defensive_patterns):
+        return False
+
+    # Skip generic responses
+    generic_patterns = [
+        "dunno wot yer on about",
+        "whatever",
+        "i don't care",
+        "who cares",
+        "that's nice",
+        "good for you",
+        "so what",
+    ]
+    if any(pattern in sentence_lower for pattern in generic_patterns):
+        return False
+
+    # Prioritize factual indicators
+    factual_indicators = [
+        "is",
+        "was",
+        "are",
+        "were",
+        "called",
+        "named",
+        "lives",
+        "works",
+        "born",
+        "from",
+        "in",
+        "at",
+        "daughter",
+        "son",
+        "wife",
+        "husband",
+        "father",
+        "mother",
+        "brother",
+        "sister",
+        "grandkid",
+        "grandson",
+        "granddaughter",
+        "plays for",
+        "team",
+        "footballer",
+        "years old",
+    ]
+    has_factual_content = any(indicator in sentence_lower for indicator in factual_indicators)
+
+    return has_factual_content
+
+
+def _extract_family_relationships(sentence: str, personality_name: str = None) -> str:
+    """Extract and standardize family relationship information."""
+    sentence_lower = sentence.lower()
+
+    # Family relationship patterns with standardization
+    patterns = [
+        # Daughter relationships
+        (r"(?:me |my )?daughter['']?s?(?:'s)?\s+(?:called|named|is)\s+(\w+)", r"has daughter named \1"),
+        (r"(\w+)(?:'s| is)?\s+(?:me |my )?daughter", r"has daughter named \1"),
+        # Son/grandson relationships
+        (r"(?:me |my )?(?:grandkid|grandson)(?:'s)?\s+(?:called|named|is)\s+(\w+)", r"has grandson named \1"),
+        (r"(\w+)(?:'s| is)?\s+(?:me |my )?(?:grandkid|grandson)", r"has grandson named \1"),
+        (r"she named (?:him|'im)\s+(\w+)", r"grandson is named \1"),
+        # General family
+        (r"(\w+)(?:'s| is)?\s+(?:me |my )?(\w+)", r"has \2 named \1"),
+    ]
+
+    for pattern, replacement in patterns:
+        match = re.search(pattern, sentence_lower)
+        if match:
+            # Extract the name and relationship
+            if len(match.groups()) >= 1:
+                result = re.sub(pattern, replacement, sentence_lower)
+
+                # Clean up the result
+                result = result.replace("me ", "").replace("my ", "")
+                if personality_name:
+                    result = f"{personality_name} {result}"
+
+                return result.capitalize()
+
+    return sentence
+
+
+def _get_meaningful_words(sentence: str) -> list:
+    """Extract meaningful words from a sentence, excluding filler words."""
+    filler_words = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "it",
+        "that",
+        "this",
+        "and",
+        "but",
+        "or",
+        "so",
+        "if",
+    }
+    return [word for word in sentence.lower().split() if word not in filler_words]
+
+
+def search_google(query: str, bot_id: str = None) -> str:
     """Search Google for information if Grug doesn't know the answer."""
-    if not config.CAN_SEARCH:
-        return ""
+    log.debug(
+        "Performing Google search.",
+        extra={"bot_id": bot_id, "query": query, "search_type": "google_custom_search"},
+    )
     try:
         url = "https://www.googleapis.com/customsearch/v1"
         params = {"key": config.GOOGLE_API_KEY, "cx": config.GOOGLE_CSE_ID, "q": query}
@@ -413,9 +537,24 @@ def search_google(query: str) -> str:
         if response.status_code == 200:
             results = response.json().get("items", [])
             snippets = [item.get("snippet", "") for item in results[:3]]
-            return " ".join(snippets).replace("\n", "")
+            result_text = " ".join(snippets).replace("\n", "")
+            log.info(
+                "Google Search completed",
+                extra={
+                    "bot_id": bot_id,
+                    "query": query,
+                    "results_count": len(results),
+                    "result_length": len(result_text),
+                },
+            )
+            return result_text
+        else:
+            log.warning(
+                "Google Search API returned error",
+                extra={"bot_id": bot_id, "query": query, "status_code": response.status_code},
+            )
     except Exception as e:
-        log.error("Google search failed", extra={"error": str(e)})
+        log.error("Google search failed", extra={"bot_id": bot_id, "query": query, "error": str(e)})
     return ""
 
 
@@ -566,7 +705,7 @@ def query_model(
     if not statement or len(statement.strip()) < 3:
         return "FALSE - Statement too short to verify."
 
-    cache_key = get_cache_key(statement)
+    cache_key = get_cache_key(statement, current_bot_id)
     cached_response = response_cache.get(cache_key)
     if cached_response:
         log.info("Using cached response", extra={"cache_key": cache_key})
@@ -585,9 +724,18 @@ def query_model(
     if current_bot_id:
         cross_bot_memories = get_cross_bot_memories(clean_stmt, server_id, current_bot_id)
 
-    if not relevant_lore:  # If no strong internal signal, search web
-        log.info("No strong memory for statement, searching web", extra={"statement": clean_stmt})
-        external_info = search_google(clean_stmt)
+    log.debug(
+        "Querying model with statement.",
+        extra={
+            "bot_id": current_bot_id,
+            "server_id": server_id,
+            "statement": clean_stmt,
+            "cache_key": cache_key,
+            "has_lore": bool(relevant_lore),
+            "has_external_info": bool(external_info),
+            "has_cross_bot_memories": bool(cross_bot_memories),
+        },
+    )
 
     # Combine external info with cross-bot memories
     combined_external_info = external_info
@@ -604,13 +752,23 @@ def query_model(
     personality_name = personality.chosen_name or personality.name
 
     if config.USE_GEMINI:
-        return query_gemini_api(prompt_text, cache_key, server_db, personality_name)
+        return query_gemini_api(prompt_text, cache_key, server_db, personality_name, current_bot_id)
     else:
-        return query_ollama_api(prompt_text, cache_key, server_db, personality_name)
+        return query_ollama_api(prompt_text, cache_key, server_db, personality_name, current_bot_id)
 
 
-def query_ollama_api(prompt_text: str, cache_key: str, server_db=None, personality_name: str = None) -> str | None:
-    log.info("Querying Ollama with integrated prompt")
+def query_ollama_api(
+    prompt_text: str, cache_key: str, server_db=None, personality_name: str = None, bot_id: str = None
+) -> str | None:
+    log.info(
+        "Starting Ollama API query",
+        extra={
+            "bot_id": bot_id,
+            "personality": personality_name,
+            "prompt_length": len(prompt_text),
+            "cache_key": cache_key,
+        },
+    )
     for idx, url in enumerate(config.OLLAMA_URLS):
         raw_model = config.OLLAMA_MODELS[idx] if idx < len(config.OLLAMA_MODELS) else config.OLLAMA_MODELS[0]
         try:
@@ -623,36 +781,88 @@ def query_ollama_api(prompt_text: str, cache_key: str, server_db=None, personali
             r = session.post(f"{url}/api/generate", json=payload, timeout=60)
             if r.status_code == 200:
                 response = r.json().get("response", "").strip()
-                validated = validate_and_process_response(response, cache_key, server_db, personality_name)
+                log.info(
+                    "Ollama API response received",
+                    extra={
+                        "bot_id": bot_id,
+                        "personality": personality_name,
+                        "model": raw_model,
+                        "url": url,
+                        "response_length": len(response),
+                        "cache_key": cache_key,
+                    },
+                )
+                validated = validate_and_process_response(response, cache_key, server_db, personality_name, bot_id)
                 if validated:
                     return validated
+            else:
+                log.warning(
+                    "Ollama API returned error",
+                    extra={"bot_id": bot_id, "url": url, "status_code": r.status_code, "model": raw_model},
+                )
         except requests.exceptions.RequestException as e:
-            log.error("Ollama request failed", extra={"url": url, "error": str(e)})
+            log.error(
+                "Ollama request failed", extra={"bot_id": bot_id, "url": url, "model": raw_model, "error": str(e)}
+            )
     return None
 
 
-def query_gemini_api(prompt_text: str, cache_key: str, server_db=None, personality_name: str = None) -> str | None:
-    log.info("Querying Gemini with integrated prompt")
+def query_gemini_api(
+    prompt_text: str, cache_key: str, server_db=None, personality_name: str = None, bot_id: str = None
+) -> str | None:
+    log.info(
+        "Starting Gemini API query",
+        extra={
+            "bot_id": bot_id,
+            "personality": personality_name,
+            "model": config.GEMINI_MODEL,
+            "prompt_length": len(prompt_text),
+            "cache_key": cache_key,
+        },
+    )
     try:
         import google.generativeai as genai
 
         genai.configure(api_key=config.GEMINI_API_KEY)
         model = genai.GenerativeModel(model_name=config.GEMINI_MODEL)
         resp = model.generate_content(prompt_text, stream=False, generation_config={"temperature": 0.3, "top_p": 0.5})
-        validated = validate_and_process_response(resp.text, cache_key, server_db, personality_name)
+
+        log.info(
+            "Gemini API response received",
+            extra={
+                "bot_id": bot_id,
+                "personality": personality_name,
+                "response_length": len(resp.text) if resp.text else 0,
+                "cache_key": cache_key,
+            },
+        )
+
+        validated = validate_and_process_response(resp.text, cache_key, server_db, personality_name, bot_id)
         if validated:
             return validated
     except Exception as e:
-        log.error("Gemini API call failed", extra={"error": str(e)})
+        log.error(
+            "Gemini API call failed",
+            extra={"bot_id": bot_id, "personality": personality_name, "error": str(e), "cache_key": cache_key},
+        )
     return None
 
 
 def validate_and_process_response(
-    response: str, cache_key: str, server_db=None, personality_name: str = None
+    response: str, cache_key: str, server_db=None, personality_name: str = None, bot_id: str = None
 ) -> str | None:
     """Centralized response validation and processing."""
     response = response.split("<END>")[0].strip()
-    log.info("Raw response from model", extra={"response": response[:200]})
+    log.info(
+        "Processing model response",
+        extra={
+            "bot_id": bot_id,
+            "personality": personality_name,
+            "response_preview": response[:200],
+            "response_length": len(response),
+            "cache_key": cache_key,
+        },
+    )
 
     true_match = re.search(r"\bTRUE\b", response, re.IGNORECASE)
     false_match = re.search(r"\bFALSE\b", response, re.IGNORECASE)
@@ -689,6 +899,8 @@ class GrugThinkBot(commands.Cog):
         self.personality_engine = bot_instance.personality_engine
         self.server_manager = getattr(bot_instance, "server_manager", None)
         self.tree = client.tree
+        self.chat_frequencies = {}  # Server ID -> chat frequency percentage
+        self.last_messages = {}  # Server ID -> list of recent messages for context analysis
 
     def get_server_db(self, interaction_or_guild_id):
         """Get the appropriate database for a Discord interaction or guild ID."""
@@ -714,12 +926,31 @@ class GrugThinkBot(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        log.info("Logged in to Discord", extra={"user": str(self.client.user)})
+        log.info(
+            "Logged in to Discord and ready.",
+            extra={
+                "bot_id": self.get_bot_id(),
+                "user": str(self.client.user),
+                "guild_count": len(self.client.guilds),
+            },
+        )
         try:
             await self.tree.sync()
-            log.info("Commands synced")
+            log.info("Commands synced successfully.", extra={"bot_id": self.get_bot_id()})
         except Exception as e:
-            log.error("Failed to sync commands", extra={"error": str(e)})
+            log.error("Failed to sync commands", extra={"bot_id": self.get_bot_id(), "error": str(e)})
+
+    @commands.Cog.listener()
+    async def on_connect(self):
+        log.info("Bot has connected to the Discord gateway.", extra={"bot_id": self.get_bot_id()})
+
+    @commands.Cog.listener()
+    async def on_disconnect(self):
+        log.warning("Bot has disconnected from the Discord gateway.", extra={"bot_id": self.get_bot_id()})
+
+    @commands.Cog.listener()
+    async def on_resumed(self):
+        log.info("Bot has resumed its session.", extra={"bot_id": self.get_bot_id()})
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
@@ -784,6 +1015,10 @@ class GrugThinkBot(commands.Cog):
         if message.author.bot and not is_markov_bot:
             # Ignore other bot messages that don't mention us
             return
+
+        # Natural chat engagement logic
+        await self.handle_natural_chat_engagement(message, server_id, personality, bot_name)
+
         # Process commands first
         await self.client.process_commands(message)
 
@@ -1341,8 +1576,9 @@ class GrugThinkBot(commands.Cog):
             else:
                 await interaction.followup.send("I already know that.", ephemeral=True)
 
-    @app_commands.command(name="what-know", description="See all the facts the bot knows.")
-    async def what_know(self, interaction: discord.Interaction):
+    @app_commands.command(name="what-know", description="See facts the bot knows (use web interface for full list).")
+    @app_commands.describe(page="Page number to view (default: 1)", search="Search for specific facts (optional)")
+    async def what_know(self, interaction: discord.Interaction, page: int = 1, search: str = None):
         await interaction.response.defer(ephemeral=True)  # Tell Discord bot is thinking
 
         # Get personality info
@@ -1352,73 +1588,89 @@ class GrugThinkBot(commands.Cog):
 
         # Get the server-specific database
         server_db = self.get_server_db(interaction)
-        all_facts = server_db.get_all_facts()
+
+        # Handle search vs all facts
+        if search:
+            all_facts = server_db.search_facts(search, k=50)  # Search with higher limit
+            search_mode = True
+        else:
+            all_facts = server_db.get_all_facts()
+            search_mode = False
 
         if not all_facts:
-            if personality.response_style == "caveman":
-                await interaction.followup.send(f"{bot_name} know nothing in this cave.", ephemeral=True)
+            if search_mode:
+                message = f"No facts found matching '{search}'"
+            elif personality.response_style == "caveman":
+                message = f"{bot_name} know nothing in this cave."
             elif personality.response_style == "british_working_class":
-                await interaction.followup.send("dont know nuffin yet mate, simple as", ephemeral=True)
+                message = "dont know nuffin yet mate, simple as"
             else:
-                await interaction.followup.send("I don't know any facts yet.", ephemeral=True)
+                message = "I don't know any facts yet."
+
+            await interaction.followup.send(message, ephemeral=True)
             return
+
+        # Pagination setup
+        FACTS_PER_PAGE = 15
+        total_facts = len(all_facts)
+        total_pages = max(1, (total_facts + FACTS_PER_PAGE - 1) // FACTS_PER_PAGE)
+
+        # Validate page number
+        if page < 1:
+            page = 1
+        elif page > total_pages:
+            page = total_pages
+
+        # Calculate start and end indices for this page
+        start_idx = (page - 1) * FACTS_PER_PAGE
+        end_idx = min(start_idx + FACTS_PER_PAGE, total_facts)
+        page_facts = all_facts[start_idx:end_idx]
 
         # Create a Discord embed for better formatting
         server_name = interaction.guild.name if interaction.guild else "DM"
 
-        if personality.response_style == "caveman":
-            title = f"{bot_name}'s Memories ({server_name})"
-            description = f"{bot_name} knows {len(all_facts)} things in this cave:"
+        # Build title based on mode
+        if search_mode:
+            base_title = f"Search: '{search}'"
+            total_desc = f"Found {total_facts} matching facts"
+        elif personality.response_style == "caveman":
+            base_title = f"{bot_name}'s Memories"
+            total_desc = f"{bot_name} knows {total_facts} things in this cave"
         elif personality.response_style == "british_working_class":
-            title = f"wot i know ({server_name})"
-            description = f"got {len(all_facts)} fings in me ed, nuff said:"
+            base_title = "wot i know"
+            total_desc = f"got {total_facts} fings in me ed, nuff said"
         else:
-            title = f"Knowledge Base ({server_name})"
-            description = f"I know {len(all_facts)} facts:"
+            base_title = "Knowledge Base"
+            total_desc = f"I know {total_facts} facts"
 
-        # Discord embed field value limit is 1024 characters
-        MAX_FIELD_LENGTH = 950  # Leave margin for formatting
-        MAX_FACT_LENGTH = 100  # Max length per individual fact
+        title = f"{base_title} ({server_name}) - Page {page}/{total_pages}"
+        description = f"{total_desc}\n🌐 **[View & Edit All Memories](http://localhost:8080)**"
 
-        # Build fact list that respects Discord embed limits
+        # Build fact list for this page
+        MAX_FACT_LENGTH = 120  # Max length per individual fact
         fact_lines = []
-        current_length = 0
-        facts_shown = 0
 
-        for i, fact in enumerate(all_facts):
+        for i, fact in enumerate(page_facts, start=start_idx + 1):
             # Truncate long facts
             display_fact = fact[:MAX_FACT_LENGTH] + "..." if len(fact) > MAX_FACT_LENGTH else fact
-            fact_line = f"{i + 1}. {display_fact}"
-
-            # Check if adding this fact would exceed Discord's embed field limit
-            new_length = current_length + len(fact_line) + 1  # +1 for newline
-            if new_length > MAX_FIELD_LENGTH:
-                break
-
-            fact_lines.append(fact_line)
-            current_length = new_length
-            facts_shown += 1
+            fact_lines.append(f"{i}. {display_fact}")
 
         # Create the fact list string
         fact_list = "\n".join(fact_lines)
 
-        # Add truncation notice if not all facts were shown
-        if facts_shown < len(all_facts):
-            remaining = len(all_facts) - facts_shown
-            truncation_notice = f"\n\n... and {remaining} more fact{'s' if remaining != 1 else ''}"
+        # Add navigation hints
+        nav_hints = []
+        if page > 1:
+            nav_hints.append(f"Previous: `/what-know page:{page - 1}`")
+        if page < total_pages:
+            nav_hints.append(f"Next: `/what-know page:{page + 1}`")
+        if search_mode:
+            nav_hints.append("All facts: `/what-know`")
+        else:
+            nav_hints.append("Search: `/what-know search:term`")
 
-            # Ensure truncation notice fits within limit
-            if len(fact_list) + len(truncation_notice) <= MAX_FIELD_LENGTH:
-                fact_list += truncation_notice
-            else:
-                # Remove last fact to make room for truncation notice
-                if fact_lines:
-                    fact_lines.pop()
-                    facts_shown -= 1
-                    remaining = len(all_facts) - facts_shown
-                    fact_list = (
-                        "\n".join(fact_lines) + f"\n\n... and {remaining} more fact{'s' if remaining != 1 else ''}"
-                    )
+        if nav_hints:
+            fact_list += f"\n\n📝 {' | '.join(nav_hints)}"
 
         embed = discord.Embed(
             title=title,
@@ -1426,9 +1678,8 @@ class GrugThinkBot(commands.Cog):
             color=discord.Color.blue(),
         )
 
-        # Use appropriate field name based on whether facts were truncated
-        field_name = "Facts" if facts_shown == len(all_facts) else f"Facts (Showing {facts_shown} of {len(all_facts)})"
-        embed.add_field(name=field_name, value=fact_list or "No facts to display", inline=False)
+        # Use appropriate field name - for pagination we always show "Facts"
+        embed.add_field(name="Facts", value=fact_list or "No facts to display", inline=False)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -1496,6 +1747,187 @@ class GrugThinkBot(commands.Cog):
             embed.add_field(name="Developed Quirks", value=quirks_text, inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="chat-frequency", description="Set how often the bot naturally chats (0-100%)")
+    @app_commands.describe(percentage="Chat frequency percentage (0=never, 100=very often)")
+    async def set_chat_frequency(self, interaction: discord.Interaction, percentage: int):
+        """Set the bot's natural chat engagement frequency."""
+        if not interaction.guild:
+            await interaction.response.send_message("This command only works in servers!", ephemeral=True)
+            return
+
+        if percentage < 0 or percentage > 100:
+            await interaction.response.send_message("Percentage must be between 0 and 100!", ephemeral=True)
+            return
+
+        server_id = str(interaction.guild.id)
+
+        # Store the chat frequency setting
+        self.chat_frequencies[server_id] = percentage
+
+        # Get bot name for response
+        personality = self.personality_engine.get_personality(server_id)
+        bot_name = personality.chosen_name or "Bot"
+
+        if percentage == 0:
+            response = f"{bot_name} will stay quiet unless directly mentioned."
+        elif percentage <= 25:
+            response = f"{bot_name} will occasionally join conversations ({percentage}% frequency)."
+        elif percentage <= 50:
+            response = f"{bot_name} will moderately participate in chat ({percentage}% frequency)."
+        elif percentage <= 75:
+            response = f"{bot_name} will actively participate in discussions ({percentage}% frequency)."
+        else:
+            response = f"{bot_name} will be very chatty and engage frequently ({percentage}% frequency)."
+
+        log.info(
+            "Chat frequency updated",
+            extra={
+                "bot_id": self.get_bot_id(),
+                "server_id": server_id,
+                "frequency": percentage,
+                "user_id": str(interaction.user.id),
+            },
+        )
+
+        await interaction.response.send_message(response, ephemeral=True)
+
+    async def handle_natural_chat_engagement(self, message, server_id, personality, bot_name):
+        """Handle natural bot chat engagement based on conversation flow."""
+        # Skip if bot is mentioned (that's handled separately)
+        if self.is_bot_mentioned(message.content, bot_name):
+            return
+
+        # Skip if user is rate limited
+        if is_rate_limited(message.author.id, self.get_bot_id()):
+            return
+
+        # Get chat frequency setting for this server (default 0%)
+        chat_frequency = self.chat_frequencies.get(server_id, 0)
+        if chat_frequency == 0:
+            return
+
+        # Track recent messages for context analysis
+        if server_id not in self.last_messages:
+            self.last_messages[server_id] = []
+
+        self.last_messages[server_id].append(
+            {
+                "author": message.author.display_name or message.author.name,
+                "content": message.content,
+                "timestamp": time.time(),
+                "is_bot": message.author.bot,
+            }
+        )
+
+        # Keep only last 10 messages for context
+        self.last_messages[server_id] = self.last_messages[server_id][-10:]
+
+        # Analyze conversation context to determine engagement likelihood
+        recent_messages = self.last_messages[server_id]
+
+        # Calculate engagement factors
+        engagement_score = self.calculate_engagement_score(recent_messages, bot_name, chat_frequency)
+
+        # Use randomness based on engagement score
+        if random.randint(1, 100) <= engagement_score:
+            # Generate natural response
+            await self.generate_natural_response(message, server_id, personality, recent_messages)
+
+    def calculate_engagement_score(self, recent_messages, bot_name, base_frequency):
+        """Calculate how likely the bot should be to engage naturally."""
+        if not recent_messages:
+            return 0
+
+        score = base_frequency
+
+        # Recent activity boost (more messages = higher engagement)
+        recent_count = len([msg for msg in recent_messages if time.time() - msg["timestamp"] < 300])  # 5 minutes
+        if recent_count >= 3:
+            score += 10
+        elif recent_count >= 2:
+            score += 5
+
+        # Multiple people chatting boost
+        unique_authors = len(set(msg["author"] for msg in recent_messages if not msg["is_bot"]))
+        if unique_authors >= 3:
+            score += 15
+        elif unique_authors >= 2:
+            score += 8
+
+        # Topic relevance boost (look for keywords the bot might care about)
+        content_lower = " ".join(msg["content"].lower() for msg in recent_messages)
+        topic_keywords = ["food", "drink", "football", "fight", "cave", "stone", "mammoth", "beer", "pie"]
+        for keyword in topic_keywords:
+            if keyword in content_lower:
+                score += 5
+                break
+
+        # Don't engage too frequently - check if bot spoke recently
+        bot_spoke_recently = any(msg["author"].lower() == bot_name.lower() for msg in recent_messages[-3:])
+        if bot_spoke_recently:
+            score = max(0, score - 30)
+
+        return min(score, 95)  # Cap at 95% to maintain some unpredictability
+
+    async def generate_natural_response(self, message, server_id, personality, recent_messages):
+        """Generate a natural conversational response."""
+        try:
+            # Build context from recent messages
+            context_lines = []
+            for msg in recent_messages[-5:]:  # Last 5 messages for context
+                if not msg["is_bot"] or "markov" in msg["author"].lower():
+                    context_lines.append(f"{msg['author']}: {msg['content']}")
+
+            context = "\n".join(context_lines)
+
+            # Create a natural engagement prompt
+            prompt = f"""You are {personality.name} with {personality.response_style} personality.
+
+Recent conversation:
+{context}
+
+Respond naturally as if you're part of the conversation. Keep it short (1-2 sentences), casual, and in character.
+Don't repeat what others said. Add your own perspective or reaction.
+
+Response:"""
+
+            # Get response from the AI using existing query infrastructure
+            server_db = self.get_server_db(message.guild.id if message.guild else "dm")
+
+            # Use the existing query_model system but with a natural chat prompt
+            loop = asyncio.get_running_loop()
+            raw_response = await loop.run_in_executor(
+                None, query_model, prompt, server_db, server_id, self.personality_engine, self.get_bot_id()
+            )
+
+            if raw_response and len(raw_response.strip()) > 0:
+                # Apply personality style using existing system
+                response = self.personality_engine.get_response_with_style(server_id, raw_response)
+
+                # Send with natural delay to seem more organic
+                await asyncio.sleep(random.uniform(1, 3))
+                await message.channel.send(response)
+
+                log.info(
+                    "Natural chat engagement",
+                    extra={
+                        "bot_id": self.get_bot_id(),
+                        "server_id": server_id,
+                        "trigger_message": message.content[:100],
+                        "response": response[:100],
+                    },
+                )
+
+        except Exception as e:
+            log.error(
+                "Failed to generate natural response",
+                extra={
+                    "bot_id": self.get_bot_id(),
+                    "server_id": server_id,
+                    "error": str(e),
+                },
+            )
 
 
 def main():
